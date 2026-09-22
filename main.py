@@ -26,7 +26,6 @@ def init_db():
     ''')
     
     # 일기 테이블 (사용자ID, 날짜, 감정, 내용, 공개 여부)
-    # is_public: 0(비밀일기), 1(공개일기)
     c.execute('''
         CREATE TABLE IF NOT EXISTS diaries (
             username TEXT,
@@ -39,7 +38,6 @@ def init_db():
         )
     ''')
     
-    # 기존 데이터베이스 컬럼 업데이트 처리 (마이그레이션 예외 처리)
     try:
         c.execute("ALTER TABLE users ADD COLUMN nickname TEXT DEFAULT ''")
     except sqlite3.OperationalError:
@@ -82,10 +80,12 @@ def login_user(username, password):
             return True, nickname
     return False, None
 
-def get_user_diaries(username):
+def get_user_diaries(username, is_public_flag):
+    """특정 사용자의 비밀일기(0) 또는 공개일기(1) 조회"""
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT date, emotion, content, is_public FROM diaries WHERE username = ?", (username,))
+    c.execute("SELECT date, emotion, content FROM diaries WHERE username = ? AND is_public = ?", 
+              (username, 1 if is_public_flag else 0))
     rows = c.fetchall()
     conn.close()
     
@@ -93,17 +93,16 @@ def get_user_diaries(username):
     for r in rows:
         diaries[r[0]] = {
             "emotion": r[1],
-            "content": r[2],
-            "is_public": bool(r[3])
+            "content": r[2]
         }
     return diaries
 
-def get_public_diaries():
-    """모든 사용자의 공개 일기 목록 가져오기"""
+def get_all_public_diaries():
+    """모든 사용자의 공개 일기 목록 (공개일기 페이지의 '다른 사람 일기' 구경용)"""
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT d.date, d.emotion, d.content, u.nickname 
+        SELECT d.date, d.emotion, d.content, u.nickname, d.username
         FROM diaries d
         JOIN users u ON d.username = u.username
         WHERE d.is_public = 1
@@ -118,7 +117,8 @@ def get_public_diaries():
             "date": r[0],
             "emotion": r[1],
             "content": r[2],
-            "nickname": r[3]
+            "nickname": r[3],
+            "username": r[4]
         })
     return public_list
 
@@ -164,8 +164,13 @@ today_str = datetime.date.today().strftime("%Y-%m-%d")
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = today_str
 
+# 메인 페이지 상태 ('secret_calendar', 'public_calendar', 'diary_editor')
 if "page" not in st.session_state:
-    st.session_state.page = "calendar"
+    st.session_state.page = "secret_calendar"
+
+# 일기 편집기 모드 (비밀일기인지 공개일기인지 구분)
+if "editor_is_public" not in st.session_state:
+    st.session_state.editor_is_public = False
 
 STANDARD_EMOTIONS = ["😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤"]
 EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
@@ -208,7 +213,7 @@ if st.session_state.user is None:
                 st.warning("모든 정보를 입력해 주세요.")
 
 # =========================================================
-# 4. 메인 서비스 화면 (로그인 후)
+# 4. 메인 서비스 화면 (로그인 완료 시)
 # =========================================================
 else:
     current_user = st.session_state.user
@@ -221,48 +226,49 @@ else:
     if st.sidebar.button("🔒 로그아웃"):
         st.session_state.user = None
         st.session_state.nickname = None
-        st.session_state.page = "calendar"
+        st.session_state.page = "secret_calendar"
         st.rerun()
 
     st.sidebar.markdown("---")
     
+    # 메뉴를 '비밀일기'와 '공개일기' 두 가지로 명확히 분리
+    nav_index = 0 if st.session_state.page in ["secret_calendar", "diary_editor"] and not st.session_state.editor_is_public else 1
+    
     nav_choice = st.sidebar.radio(
         "메뉴 선택",
-        ["🗓️ 내 달력 보기", "✏️ 일기 작성 / 수정", "🌐 모두의 공개 일기"],
-        index=0 if st.session_state.page == "calendar" else (1 if st.session_state.page == "diary" else 2)
+        ["🔒 비밀일기", "🌐 공개일기"],
+        index=nav_index
     )
 
-    if nav_choice == "🗓️ 내 달력 보기" and st.session_state.page != "calendar":
-        st.session_state.page = "calendar"
+    if nav_choice == "🔒 비밀일기" and (st.session_state.page != "secret_calendar" and (st.session_state.page == "diary_editor" and st.session_state.editor_is_public)):
+        st.session_state.page = "secret_calendar"
+        st.session_state.editor_is_public = False
         st.rerun()
-    elif nav_choice == "✏️ 일기 작성 / 수정" and st.session_state.page != "diary":
-        st.session_state.page = "diary"
-        st.rerun()
-    elif nav_choice == "🌐 모두의 공개 일기" and st.session_state.page != "public_feed":
-        st.session_state.page = "public_feed"
+    elif nav_choice == "🌐 공개일기" and (st.session_state.page != "public_calendar" and (st.session_state.page == "diary_editor" and not st.session_state.editor_is_public)):
+        st.session_state.page = "public_calendar"
+        st.session_state.editor_is_public = True
         st.rerun()
 
     st.title("🧸 소소하고 포근한 일기장")
-    user_diaries = get_user_diaries(current_user)
 
     # ---------------------------------------------------------
-    # PAGE 1: 내 달력 페이지
+    # PAGE 1: 🔒 비밀일기 페이지 (달력 포함)
     # ---------------------------------------------------------
-    if st.session_state.page == "calendar":
-        st.subheader("🗓️ 내 달력에서 날짜를 선택하세요")
-        st.caption("날짜를 클릭하면 해당 날짜의 일기 작성/수정 페이지로 이동합니다.")
+    if st.session_state.page == "secret_calendar":
+        st.header("🔒 나만의 비밀일기")
+        st.caption("이곳의 일기는 오직 나에게만 보여집니다. 달력에서 날짜를 클릭하면 일기를 쓰고 수정할 수 있습니다.")
+
+        secret_diaries = get_user_diaries(current_user, is_public_flag=False)
 
         calendar_events = []
-        for date_str, diary_data in user_diaries.items():
+        for date_str, diary_data in secret_diaries.items():
             if diary_data.get("content") and diary_data["content"].strip():
-                # 공개 여부에 따라 달력 아이콘 구분
-                lock_icon = "🌐" if diary_data.get("is_public") else "🔒"
                 calendar_events.append({
-                    "title": f"{lock_icon} {diary_data['emotion']} 일기",
+                    "title": f"🔒 {diary_data['emotion']} 비밀일기",
                     "start": date_str,
                     "end": date_str,
                     "allDay": True,
-                    "color": "#DDA15E"
+                    "color": "#6C5B52"
                 })
 
         calendar_options = {
@@ -275,7 +281,7 @@ else:
             "selectable": True,
         }
 
-        cal_res = calendar(events=calendar_events, options=calendar_options, key="cozy_diary_calendar")
+        cal_res = calendar(events=calendar_events, options=calendar_options, key="secret_diary_calendar")
 
         clicked_date = None
         if cal_res and "dateClick" in cal_res:
@@ -285,21 +291,85 @@ else:
 
         if clicked_date:
             st.session_state.selected_date = clicked_date
-            st.session_state.page = "diary"
+            st.session_state.editor_is_public = False
+            st.session_state.page = "diary_editor"
             st.rerun()
 
     # ---------------------------------------------------------
-    # PAGE 2: 일기 작성 및 수정 / 조회 페이지
+    # PAGE 2: 🌐 공개일기 페이지 (내 공개달력 + 모두의 공개피드)
     # ---------------------------------------------------------
-    elif st.session_state.page == "diary":
+    elif st.session_state.page == "public_calendar":
+        st.header("🌐 공유하는 공개일기")
+        st.caption("내가 공개로 설정한 일기들과 다른 사람들의 공개 일기를 만날 수 있는 공간입니다.")
+
+        public_tab1, public_tab2 = st.tabs(["🗓️ 내 공개일기 달력", "📖 모두의 이야기 모아보기"])
+
+        with public_tab1:
+            st.subheader("내 공개일기 달력")
+            st.caption("날짜를 선택해 공개 일기를 작성하거나 수정해 보세요.")
+            
+            my_public_diaries = get_user_diaries(current_user, is_public_flag=True)
+
+            calendar_events = []
+            for date_str, diary_data in my_public_diaries.items():
+                if diary_data.get("content") and diary_data["content"].strip():
+                    calendar_events.append({
+                        "title": f"🌐 {diary_data['emotion']} 공개일기",
+                        "start": date_str,
+                        "end": date_str,
+                        "allDay": True,
+                        "color": "#DDA15E"
+                    })
+
+            calendar_options = {
+                "headerToolbar": {
+                    "left": "prev,next today",
+                    "center": "title",
+                    "right": "dayGridMonth"
+                },
+                "initialView": "dayGridMonth",
+                "selectable": True,
+            }
+
+            cal_res_pub = calendar(events=calendar_events, options=calendar_options, key="public_diary_calendar")
+
+            clicked_date_pub = None
+            if cal_res_pub and "dateClick" in cal_res_pub:
+                clicked_date_pub = cal_res_pub["dateClick"]["date"].split("T")[0]
+            elif cal_res_pub and "select" in cal_res_pub:
+                clicked_date_pub = cal_res_pub["select"]["start"].split("T")[0]
+
+            if clicked_date_pub:
+                st.session_state.selected_date = clicked_date_pub
+                st.session_state.editor_is_public = True
+                st.session_state.page = "diary_editor"
+                st.rerun()
+
+        with public_tab2:
+            st.subheader("모두가 남긴 공개 일기")
+            all_publics = get_all_public_diaries()
+            if all_publics:
+                for item in all_publics:
+                    with st.container():
+                        st.markdown(f"#### {item['emotion']} **{item['nickname']}** 님의 이야기")
+                        st.caption(f"날짜: {item['date']}")
+                        st.info(item['content'])
+                        st.markdown("---")
+            else:
+                st.write("🌿 아직 등록된 공개 일기가 없어요.")
+
+    # ---------------------------------------------------------
+    # PAGE 3: 통합 일기 작성 / 수정 페이지
+    # ---------------------------------------------------------
+    elif st.session_state.page == "diary_editor":
         selected_date = st.session_state.selected_date
-        is_today = (selected_date == today_str)
+        is_public_mode = st.session_state.editor_is_public
+        mode_icon = "🌐 공개일기" if is_public_mode else "🔒 비밀일기"
 
-        if is_today:
-            st.header(f"✏️ 오늘의 일기 ({selected_date})")
-        else:
-            st.header(f"📖 {selected_date}의 일기")
+        st.header(f"✏️ {mode_icon} 작성/수정 ({selected_date})")
 
+        # 해당 모드(공개/비밀)의 기존 데이터 로드
+        user_diaries = get_user_diaries(current_user, is_public_flag=is_public_mode)
         has_existing = (
             selected_date in user_diaries and 
             bool(user_diaries[selected_date].get("content", "").strip())
@@ -308,18 +378,17 @@ else:
         existing_data = user_diaries.get(selected_date, {})
         saved_emotion = existing_data.get("emotion", "😊")
         saved_content = existing_data.get("content", "")
-        saved_is_public = existing_data.get("is_public", False)
 
         default_emotion_index = 0
         if saved_emotion in EMOJI_LIST:
             default_emotion_index = EMOJI_LIST.index(saved_emotion)
 
         selected_emotion_label = st.radio(
-            "오늘의 감정을 선택해 주세요:" if is_today else "이날의 감정을 선택해 주세요:",
+            "이날의 감정을 선택해 주세요:",
             options=STANDARD_EMOTIONS,
             index=default_emotion_index,
             horizontal=True,
-            key=f"emotion_radio_{selected_date}"
+            key=f"editor_emotion_{selected_date}_{is_public_mode}"
         )
         selected_emoji = selected_emotion_label.split()[0]
 
@@ -328,18 +397,8 @@ else:
             value=saved_content,
             height=200,
             placeholder="소소한 이야기라도 좋아요. 자유롭게 적어보세요...",
-            key=f"text_area_{selected_date}"
+            key=f"editor_text_{selected_date}_{is_public_mode}"
         )
-
-        # 공개 범위 설정 선택 (비밀일기 / 공개일기)
-        visibility_option = st.radio(
-            "공개범위 선택:",
-            ["🔒 비밀일기 (나만 보기)", "🌐 공개일기 (다른 사람도 볼 수 있음)"],
-            index=1 if saved_is_public else 0,
-            horizontal=True,
-            key=f"visibility_radio_{selected_date}"
-        )
-        is_public_selected = ("🌐" in visibility_option)
 
         col1, col2, col3 = st.columns([2, 2, 1])
         button_label = "💾 수정사항 저장하기" if has_existing else "🧸 마음 저장하기"
@@ -348,8 +407,10 @@ else:
         with col1:
             if st.button(button_label, use_container_width=True):
                 if diary_text.strip():
-                    save_diary(current_user, selected_date, selected_emoji, diary_text.strip(), is_public_selected)
-                    st.success("일기가 저장되었습니다!")
+                    save_diary(current_user, selected_date, selected_emoji, diary_text.strip(), is_public_mode)
+                    st.success("일기가 성공적으로 저장되었습니다!")
+                    # 저장 후 해당 달력으로 자동 이동
+                    st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
                     st.rerun()
                 else:
                     st.warning("내용을 입력해 주세요.")
@@ -357,7 +418,7 @@ else:
         # 2. 달력으로 돌아가기 버튼
         with col2:
             if st.button("🗓️ 달력으로 돌아가기", use_container_width=True):
-                st.session_state.page = "calendar"
+                st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
                 st.rerun()
 
         # 3. 삭제 버튼
@@ -366,23 +427,5 @@ else:
                 if st.button("🗑️ 삭제", use_container_width=True):
                     delete_diary(current_user, selected_date)
                     st.success("일기가 삭제되었습니다.")
+                    st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
                     st.rerun()
-
-    # ---------------------------------------------------------
-    # PAGE 3: 모두의 공개 일기 (다른 사람들이 공개한 일기 피드)
-    # ---------------------------------------------------------
-    elif st.session_state.page == "public_feed":
-        st.header("🌐 모두의 공개 일기")
-        st.caption("다른 분들이 따뜻하게 나누어 준 일기들을 읽어보세요.")
-
-        public_diaries = get_public_diaries()
-
-        if public_diaries:
-            for item in public_diaries:
-                with st.container():
-                    st.markdown(f"#### {item['emotion']} **{item['nickname']}** 님의 이야기")
-                    st.caption(f"날짜: {item['date']}")
-                    st.info(item['content'])
-                    st.markdown("---")
-        else:
-            st.write("🌿 아직 등록된 공개 일기가 없어요. 첫 번째 공개 일기를 나누어 보세요!")
