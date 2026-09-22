@@ -1,9 +1,3 @@
-회원가입 시 닉네임(Profile Nickname)을 함께 등록하고, 일기 작성 시 비밀일기(🔒) / 공개일기(🌐) 옵션을 선택하여 공개 일기는 다른 사용자들도 모아볼 수 있도록 기능을 확장한 전체 소스코드입니다.
-
-requirements.txt에 적힌 라이브러리 목록(streamlit, streamlit-calendar, bcrypt) 그대로 작동합니다.
-
-📄 전체 업데이트 코드 (app.py / main.py)
-Python
 import sqlite3
 import datetime
 import bcrypt
