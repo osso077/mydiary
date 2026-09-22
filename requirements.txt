@@ -1,4 +1,3 @@
-Plaintext
 streamlit
 streamlit-calendar
 bcrypt
