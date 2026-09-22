@@ -1,9 +1,3 @@
-달력에서 날짜를 클릭하면 자동으로 일기 작성/조회 페이지로 넘어가도록 개선하고, 이미 작성된 과거 일기는 삭제하지 않고 바로 내용을 수정 및 업데이트할 수 있도록 구현한 코드입니다.
-
-Streamlit의 탭 구조는 클릭에 반응해 자동 전환되는 로직 구현 시 약간의 한계가 있어, 사이드바 메뉴 방식을 채택하여 더욱 직관적이고 자동 전환이 깔끔하게 동작하도록 제작했습니다.
-
-📄 수정된 전체 코드 (app.py / main.py)
-Python
 import datetime
 import streamlit as st
 from streamlit_calendar import calendar
