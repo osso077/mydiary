@@ -1,2 +1,2 @@
-plotly
-requests
+streamlit
+streamlit-calendar
