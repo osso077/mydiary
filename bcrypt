@@ -1,0 +1,2 @@
+Bash
+pip install streamlit streamlit-calendar bcrypt
