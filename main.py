@@ -9,7 +9,7 @@ st.markdown("""
     
 """, unsafe_allow_html=True)
 
-# 2. 세션 상태 초기화 (실제 일기 데이터 저장)
+# 2. 세션 상태 초기화 (일기 데이터 저장소)
 if "diaries" not in st.session_state:
     st.session_state.diaries = {}
 
@@ -19,10 +19,11 @@ st.caption("오늘 하루의 마음을 이모티콘과 함께 기록해 보세�
 # 오늘 날짜 (YYYY-MM-DD)
 today_str = datetime.date.today().strftime("%Y-%m-%d")
 
-# 3. 달력 이벤트 생성 (작성된 일기가 있는 날짜만 정확히 표시)
+# 3. 달력 이벤트 생성 (실제 작성된 일기가 있는 날짜만 정확히 등록)
 calendar_events = []
 for date_str, diary_data in st.session_state.diaries.items():
-    if diary_data.get("content"):  # 내용이 실제로 있는 경우만 표시
+    # 텍스트 내용이 비어있지 않고 실제 저장된 일기만 달력에 표시
+    if diary_data.get("content") and diary_data["content"].strip():
         calendar_events.append({
             "title": f"{diary_data['emotion']} 일기",
             "start": date_str,
@@ -54,15 +55,16 @@ elif cal_res and "select" in cal_res:
 
 st.markdown("---")
 
+# 일반적인 5가지 기본 감정 목록
+STANDARD_EMOTIONS = ["😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤"]
+
 # 4. 선택한 날짜에 따른 일기 작성/조회 화면
 if selected_date == today_str:
     st.header(f"✏️ 오늘의 마음 적기 ({today_str})")
     
-    # 감정 이모티콘 선택
-    emotions = ["☀️ 따뜻함", "🌷 평온함", "☕ 느긋함", "🌧️ 우울함", "🌩️ 답답함", "😴 지침"]
     selected_emotion_label = st.radio(
-        "오늘의 마음 날씨를 선택해 주세요:",
-        options=emotions,
+        "오늘의 감정을 선택해 주세요:",
+        options=STANDARD_EMOTIONS,
         horizontal=True
     )
     selected_emoji = selected_emotion_label.split()[0]
@@ -70,7 +72,7 @@ if selected_date == today_str:
     # 오늘 일기 불러오기 (이미 쓴 경우)
     existing_content = ""
     if today_str in st.session_state.diaries:
-        existing_content = st.session_state.diaries[today_str]["content"]
+        existing_content = st.session_state.diaries[today_str].get("content", "")
 
     diary_text = st.text_area(
         "오늘 어떤 일이 있었나요?",
@@ -83,7 +85,7 @@ if selected_date == today_str:
         if diary_text.strip():
             st.session_state.diaries[today_str] = {
                 "emotion": selected_emoji,
-                "content": diary_text
+                "content": diary_text.strip()
             }
             st.success("오늘의 마음이 따뜻하게 저장되었습니다!")
             st.rerun()
@@ -93,10 +95,16 @@ if selected_date == today_str:
 else:
     st.header(f"📖 {selected_date}의 기록")
 
-    if selected_date in st.session_state.diaries and st.session_state.diaries[selected_date]["content"]:
+    # 해당 날짜에 작성된 일기가 존재하는지 검증
+    has_diary = (
+        selected_date in st.session_state.diaries and 
+        bool(st.session_state.diaries[selected_date].get("content", "").strip())
+    )
+
+    if has_diary:
         saved_diary = st.session_state.diaries[selected_date]
         
-        st.markdown(f"### 당시의 마음: {saved_diary['emotion']}")
+        st.markdown(f"### 당시의 감정: {saved_diary['emotion']}")
         st.info(saved_diary["content"])
         
         if st.button("🗑️ 일기 지우기"):
@@ -104,13 +112,11 @@ else:
             st.success("일기가 삭제되었습니다.")
             st.rerun()
     else:
-        st.write("🌿 이 날은 작성된 일기가 없어요. 과거 날짜의 일기를 남기고 싶다면 아래에서 작성할 수 있어요.")
+        st.write("🌿 이 날은 작성된 일기가 없어요. 지나간 날의 일기를 기록하고 싶다면 아래에서 작성할 수 있습니다.")
         
-        # 과거 날짜 일기 작성 지원
-        past_emotions = ["☀️ 따뜻함", "🌷 평온함", "☕ 느긋함", "🌧️ 우울함", "🌩️ 답답함", "😴 지침"]
         past_emotion_label = st.radio(
-            "이날의 마음 날씨:",
-            options=past_emotions,
+            "이날의 감정:",
+            options=STANDARD_EMOTIONS,
             horizontal=True,
             key="past_emotion"
         )
@@ -126,9 +132,9 @@ else:
             if past_diary_text.strip():
                 st.session_state.diaries[selected_date] = {
                     "emotion": past_emoji,
-                    "content": past_diary_text
+                    "content": past_diary_text.strip()
                 }
-                st.success(f"{selected_date} 일기가 저장되었습니다!")
+                st.success(f"{selected_date} 일기가 성공적으로 저장되었습니다!")
                 st.rerun()
             else:
                 st.warning("내용을 입력해 주세요.")
