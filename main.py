@@ -133,13 +133,15 @@ else:
         key=f"text_area_{selected_date}"
     )
 
-    col1, col2 = st.columns([1, 4])
+    # 버튼 레이아웃 (저장 버튼 | 달력으로 돌아가기 버튼 | 삭제 버튼)
+    col1, col2, col3 = st.columns([2, 2, 1])
     
     # 버튼 문구 (신규 작성 vs 기존 수정)
     button_label = "💾 수정사항 저장하기" if has_existing else "🧸 마음 저장하기"
     
+    # 1. 저장 버튼
     with col1:
-        if st.button(button_label):
+        if st.button(button_label, use_container_width=True):
             if diary_text.strip():
                 st.session_state.diaries[selected_date] = {
                     "emotion": selected_emoji,
@@ -149,10 +151,17 @@ else:
                 st.rerun()
             else:
                 st.warning("내용을 입력해 주세요.")
-                
+
+    # 2. 달력으로 돌아가기 버튼
     with col2:
+        if st.button("🗓️ 달력으로 돌아가기", use_container_width=True):
+            st.session_state.page = "calendar"
+            st.rerun()
+
+    # 3. 삭제 버튼 (일기가 존재하는 경우만)
+    with col3:
         if has_existing:
-            if st.button("🗑️ 일기 삭제"):
+            if st.button("🗑️ 삭제", use_container_width=True):
                 del st.session_state.diaries[selected_date]
                 st.success("일기가 삭제되었습니다.")
                 st.rerun()
