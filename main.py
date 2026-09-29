@@ -1,14 +1,56 @@
 import sqlite3
 import datetime
 import bcrypt
+import os
 import streamlit as st
 from streamlit_calendar import calendar
+from github import Github, GithubException
 
 # =========================================================
-# 1. DB 연동 및 테이블 생성 / 업데이트
+# 0. GitHub 연동을 통한 DB 영구 보존 / 백업 로직
 # =========================================================
 DB_FILE = "diary_app.db"
 
+def sync_db_from_github():
+    """앱 시작 시 깃허브 저장소에서 최신 DB 파일을 다운로드하여 복원"""
+    if "GITHUB_TOKEN" in st.secrets and "GITHUB_REPO" in st.secrets:
+        try:
+            g = Github(st.secrets["GITHUB_TOKEN"])
+            repo = g.get_repo(st.secrets["GITHUB_REPO"])
+            file_content = repo.get_contents(DB_FILE)
+            with open(DB_FILE, "wb") as f:
+                f.write(file_content.decoded_content)
+        except GithubException:
+            pass
+        except Exception as e:
+            pass
+
+def push_db_to_github(commit_message="Update database"):
+    """데이터 변경 시 깃허브 저장소로 DB 파일 자동 업로드"""
+    if "GITHUB_TOKEN" in st.secrets and "GITHUB_REPO" in st.secrets:
+        try:
+            g = Github(st.secrets["GITHUB_TOKEN"])
+            repo = g.get_repo(st.secrets["GITHUB_REPO"])
+            
+            if os.path.exists(DB_FILE):
+                with open(DB_FILE, "rb") as f:
+                    content = f.read()
+                
+                try:
+                    file_info = repo.get_contents(DB_FILE)
+                    repo.update_file(DB_FILE, commit_message, content, file_info.sha)
+                except GithubException:
+                    repo.create_file(DB_FILE, commit_message, content)
+        except Exception as e:
+            st.warning(f"깃허브 백업 중 오류 발생: {e}")
+
+# 앱 시작 시 깃허브에서 DB 다운로드
+sync_db_from_github()
+
+
+# =========================================================
+# 1. DB 연동 및 테이블 생성 / 마이그레이션
+# =========================================================
 def get_connection():
     return sqlite3.connect(DB_FILE, check_same_thread=False)
 
@@ -16,7 +58,6 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
     
-    # 사용자 테이블 (아이디, 암호화된 비밀번호, 닉네임)
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -25,7 +66,6 @@ def init_db():
         )
     ''')
     
-    # 일기 테이블 (사용자ID, 날짜, 감정, 내용, 공개 여부)
     c.execute('''
         CREATE TABLE IF NOT EXISTS diaries (
             username TEXT,
@@ -62,6 +102,7 @@ def register_user(username, password, nickname):
         c.execute("INSERT INTO users (username, password, nickname) VALUES (?, ?, ?)", 
                   (username, hashed_pw, nickname))
         conn.commit()
+        push_db_to_github("New user registered")
         return True
     except sqlite3.IntegrityError:
         return False
@@ -80,8 +121,16 @@ def login_user(username, password):
             return True, nickname
     return False, None
 
+def update_nickname(username, new_nickname):
+    """사용자의 닉네임을 변경하는 함수"""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE users SET nickname = ? WHERE username = ?", (new_nickname, username))
+    conn.commit()
+    conn.close()
+    push_db_to_github(f"Update nickname for user {username}")
+
 def get_user_diaries(username, is_public_flag):
-    """특정 사용자의 비밀일기(0) 또는 공개일기(1) 조회"""
     conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT date, emotion, content FROM diaries WHERE username = ? AND is_public = ?", 
@@ -98,7 +147,6 @@ def get_user_diaries(username, is_public_flag):
     return diaries
 
 def get_all_public_diaries():
-    """모든 사용자의 공개 일기 목록 (공개일기 페이지의 '다른 사람 일기' 구경용)"""
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
@@ -135,6 +183,7 @@ def save_diary(username, date_str, emotion, content, is_public):
     ''', (username, date_str, emotion, content, 1 if is_public else 0))
     conn.commit()
     conn.close()
+    push_db_to_github(f"Update diary entry for {date_str}")
 
 def delete_diary(username, date_str):
     conn = get_connection()
@@ -142,6 +191,7 @@ def delete_diary(username, date_str):
     c.execute("DELETE FROM diaries WHERE username = ? AND date = ?", (username, date_str))
     conn.commit()
     conn.close()
+    push_db_to_github(f"Delete diary entry for {date_str}")
 
 
 # =========================================================
@@ -164,11 +214,9 @@ today_str = datetime.date.today().strftime("%Y-%m-%d")
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = today_str
 
-# 메인 페이지 상태 ('secret_calendar', 'public_calendar', 'diary_editor')
 if "page" not in st.session_state:
     st.session_state.page = "secret_calendar"
 
-# 일기 편집기 모드 (비밀일기인지 공개일기인지 구분)
 if "editor_is_public" not in st.session_state:
     st.session_state.editor_is_public = False
 
@@ -213,16 +261,31 @@ if st.session_state.user is None:
                 st.warning("모든 정보를 입력해 주세요.")
 
 # =========================================================
-# 4. 메인 서비스 화면 (로그인 완료 시)
+# 4. 메인 서비스 화면
 # =========================================================
 else:
     current_user = st.session_state.user
     current_nickname = st.session_state.nickname
     
-    # 사이드바
+    # 사이드바 프로필 및 닉네임 수정
     st.sidebar.title("🧸 소소한 일기장")
     st.sidebar.write(f"👤 **{current_nickname}** 님")
     
+    # 닉네임 수정 접이식 메뉴 (Expander)
+    with st.sidebar.expander("✏️ 닉네임 변경하기"):
+        new_nickname_input = st.text_input("새 닉네임", value=current_nickname, key="edit_nickname_input")
+        if st.button("닉네임 저장", use_container_width=True):
+            cleaned_nick = new_nickname_input.strip()
+            if cleaned_nick and cleaned_nick != current_nickname:
+                update_nickname(current_user, cleaned_nick)
+                st.session_state.nickname = cleaned_nick
+                st.success("닉네임이 변경되었습니다!")
+                st.rerun()
+            elif cleaned_nick == current_nickname:
+                st.info("기존 닉네임과 동일합니다.")
+            else:
+                st.warning("닉네임을 입력해 주세요.")
+
     if st.sidebar.button("🔒 로그아웃"):
         st.session_state.user = None
         st.session_state.nickname = None
@@ -231,7 +294,6 @@ else:
 
     st.sidebar.markdown("---")
     
-    # 메뉴를 '비밀일기'와 '공개일기' 두 가지로 명확히 분리
     nav_index = 0 if st.session_state.page in ["secret_calendar", "diary_editor"] and not st.session_state.editor_is_public else 1
     
     nav_choice = st.sidebar.radio(
@@ -251,9 +313,7 @@ else:
 
     st.title("🧸 소소하고 포근한 일기장")
 
-    # ---------------------------------------------------------
-    # PAGE 1: 🔒 비밀일기 페이지 (달력 포함)
-    # ---------------------------------------------------------
+    # PAGE 1: 🔒 비밀일기 페이지
     if st.session_state.page == "secret_calendar":
         st.header("🔒 나만의 비밀일기")
         st.caption("이곳의 일기는 오직 나에게만 보여집니다. 달력에서 날짜를 클릭하면 일기를 쓰고 수정할 수 있습니다.")
@@ -295,9 +355,7 @@ else:
             st.session_state.page = "diary_editor"
             st.rerun()
 
-    # ---------------------------------------------------------
-    # PAGE 2: 🌐 공개일기 페이지 (내 공개달력 + 모두의 공개피드)
-    # ---------------------------------------------------------
+    # PAGE 2: 🌐 공개일기 페이지
     elif st.session_state.page == "public_calendar":
         st.header("🌐 공유하는 공개일기")
         st.caption("내가 공개로 설정한 일기들과 다른 사람들의 공개 일기를 만날 수 있는 공간입니다.")
@@ -358,9 +416,7 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # ---------------------------------------------------------
-    # PAGE 3: 통합 일기 작성 / 수정 페이지
-    # ---------------------------------------------------------
+    # PAGE 3: 일기 작성 / 수정 페이지
     elif st.session_state.page == "diary_editor":
         selected_date = st.session_state.selected_date
         is_public_mode = st.session_state.editor_is_public
@@ -368,7 +424,6 @@ else:
 
         st.header(f"✏️ {mode_icon} 작성/수정 ({selected_date})")
 
-        # 해당 모드(공개/비밀)의 기존 데이터 로드
         user_diaries = get_user_diaries(current_user, is_public_flag=is_public_mode)
         has_existing = (
             selected_date in user_diaries and 
@@ -403,25 +458,21 @@ else:
         col1, col2, col3 = st.columns([2, 2, 1])
         button_label = "💾 수정사항 저장하기" if has_existing else "🧸 마음 저장하기"
         
-        # 1. 저장 버튼
         with col1:
             if st.button(button_label, use_container_width=True):
                 if diary_text.strip():
                     save_diary(current_user, selected_date, selected_emoji, diary_text.strip(), is_public_mode)
                     st.success("일기가 성공적으로 저장되었습니다!")
-                    # 저장 후 해당 달력으로 자동 이동
                     st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
                     st.rerun()
                 else:
                     st.warning("내용을 입력해 주세요.")
 
-        # 2. 달력으로 돌아가기 버튼
         with col2:
             if st.button("🗓️ 달력으로 돌아가기", use_container_width=True):
                 st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
                 st.rerun()
 
-        # 3. 삭제 버튼
         with col3:
             if has_existing:
                 if st.button("🗑️ 삭제", use_container_width=True):
