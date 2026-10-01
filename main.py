@@ -62,7 +62,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password TEXT NOT NULL,
-            nickname TEXT NOT NULL
+            nickname TEXT NOT NULL,
+            birthdate TEXT DEFAULT ''
         )
     ''')
     
@@ -78,11 +79,17 @@ def init_db():
         )
     ''')
     
+    # 기존 사용자를 위한 DB 컬럼 마이그레이션
     try:
         c.execute("ALTER TABLE users ADD COLUMN nickname TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
         
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN birthdate TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+
     try:
         c.execute("ALTER TABLE diaries ADD COLUMN is_public INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
@@ -94,13 +101,13 @@ def init_db():
 init_db()
 
 # DB 헬퍼 함수들
-def register_user(username, password, nickname):
+def register_user(username, password, nickname, birthdate=""):
     conn = get_connection()
     c = conn.cursor()
     hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     try:
-        c.execute("INSERT INTO users (username, password, nickname) VALUES (?, ?, ?)", 
-                  (username, hashed_pw, nickname))
+        c.execute("INSERT INTO users (username, password, nickname, birthdate) VALUES (?, ?, ?, ?)", 
+                  (username, hashed_pw, nickname, birthdate))
         conn.commit()
         push_db_to_github("New user registered")
         return True
@@ -112,14 +119,14 @@ def register_user(username, password, nickname):
 def login_user(username, password):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password, nickname FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password, nickname, birthdate FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
-        stored_pw, nickname = row[0], row[1]
+        stored_pw, nickname, birthdate = row[0], row[1], row[2]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
-            return True, nickname
-    return False, None
+            return True, nickname, birthdate
+    return False, None, None
 
 def update_nickname(username, new_nickname):
     """사용자의 닉네임을 변경하는 함수"""
@@ -208,8 +215,11 @@ if "user" not in st.session_state:
     st.session_state.user = None
 if "nickname" not in st.session_state:
     st.session_state.nickname = None
+if "birthdate" not in st.session_state:
+    st.session_state.birthdate = None
 
-today_str = datetime.date.today().strftime("%Y-%m-%d")
+today_dt = datetime.date.today()
+today_str = today_dt.strftime("%Y-%m-%d")
 
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = today_str
@@ -238,10 +248,11 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname = login_user(username_input, password_input)
+                is_success, nickname, birthdate = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
+                    st.session_state.birthdate = birthdate
                     st.success(f"{st.session_state.nickname}님 환영합니다!")
                     st.rerun()
                 else:
@@ -251,14 +262,27 @@ if st.session_state.user is None:
                 
     else:  # 회원가입
         nickname_input = st.text_input("닉네임 (프로필 이름)", key="auth_nick")
+        
+        # 생일 입력 (선택사항)
+        use_birthday = st.checkbox("생년월일 입력하기 (선택)")
+        birthdate_str = ""
+        if use_birthday:
+            b_date = st.date_input(
+                "생년월일 선택",
+                value=datetime.date(2000, 1, 1),
+                min_value=datetime.date(1920, 1, 1),
+                max_value=today_dt
+            )
+            birthdate_str = b_date.strftime("%Y-%m-%d")
+
         if st.button("회원가입하기", use_container_width=True):
             if username_input and password_input and nickname_input:
-                if register_user(username_input, password_input, nickname_input.strip()):
+                if register_user(username_input, password_input, nickname_input.strip(), birthdate_str):
                     st.success("회원가입이 완료되었습니다! 로그인 탭에서 로그인해 주세요.")
                 else:
                     st.error("이미 존재하는 아이디입니다.")
             else:
-                st.warning("모든 정보를 입력해 주세요.")
+                st.warning("아이디, 비밀번호, 닉네임은 필수 입력사항입니다.")
 
 # =========================================================
 # 4. 메인 서비스 화면
@@ -266,10 +290,23 @@ if st.session_state.user is None:
 else:
     current_user = st.session_state.user
     current_nickname = st.session_state.nickname
+    user_birthdate = st.session_state.birthdate
     
+    # 생일 축하 로직 (월-일 비교)
+    if user_birthdate and len(user_birthdate) == 10:
+        birth_month_day = user_birthdate[5:]  # "MM-DD"
+        today_month_day = today_str[5:]      # "MM-DD"
+        
+        if birth_month_day == today_month_day:
+            st.balloons()
+            st.toast(f"🎂 {current_nickname}님, 생일을 진심으로 축하합니다! 🎉", icon="🎁")
+            st.info(f"🎉 **오늘은 {current_nickname}님의 생일입니다!** 행복하고 따뜻한 하루 보내세요 🎂✨")
+
     # 사이드바 프로필 및 닉네임 수정
     st.sidebar.title("🧸 소소한 일기장")
     st.sidebar.write(f"👤 **{current_nickname}** 님")
+    if user_birthdate:
+        st.sidebar.caption(f"🎂 생일: {user_birthdate}")
     
     # 닉네임 수정 접이식 메뉴 (Expander)
     with st.sidebar.expander("✏️ 닉네임 변경하기"):
@@ -289,6 +326,7 @@ else:
     if st.sidebar.button("🔒 로그아웃"):
         st.session_state.user = None
         st.session_state.nickname = None
+        st.session_state.birthdate = None
         st.session_state.page = "secret_calendar"
         st.rerun()
 
