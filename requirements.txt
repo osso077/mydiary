@@ -1,4 +1,4 @@
 streamlit
 streamlit-calendar
 bcrypt
-PyGithub
+supabase
