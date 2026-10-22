@@ -139,41 +139,4 @@ def login_user(username, password):
     row = c.fetchone()
     conn.close()
     if row:
-        stored_pw, nickname, birthdate, theme, main_color = row[0], row[1], row[2], row[3], row[4]
-        if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
-            return True, nickname, birthdate, (theme or '포근함'), (main_color or '#DDA15E')
-    return False, None, None, '포근함', '#DDA15E'
-
-def update_user_profile(username, new_nickname, new_birthdate, new_theme, new_main_color):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        UPDATE users 
-        SET nickname = ?, birthdate = ?, theme = ?, main_color = ? 
-        WHERE username = ?
-    ''', (new_nickname, new_birthdate, new_theme, new_main_color, username))
-    conn.commit()
-    conn.close()
-    push_db_to_github(f"Update profile for user {username}")
-
-def get_user_diaries(username, is_public_flag):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT date, emotion, content FROM diaries WHERE username = ? AND is_public = ?", 
-              (username, 1 if is_public_flag else 0))
-    rows = c.fetchall()
-    conn.close()
-    
-    diaries = {}
-    for r in rows:
-        diaries[r[0]] = {"emotion": r[1], "content": r[2]}
-    return diaries
-
-def get_all_public_diaries():
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT d.date, d.emotion, d.content, u.nickname, d.username
-        FROM diaries d
-        JOIN users u ON d.username = u.username
-        WHERE d.is
+        stored_pw
