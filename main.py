@@ -32,10 +32,8 @@ def push_db_to_github(commit_message="Update database"):
                 with open(DB_FILE, "rb") as f:
                     content = f.read()
                 
-                # 1. GitHub 저장소에 기존 diary_app.db 파일이 존재하는지 조회
                 try:
                     file_info = repo.get_contents(DB_FILE)
-                    # 기존 파일이 있다면 sha 값을 명시하여 update
                     repo.update_file(
                         path=DB_FILE,
                         message=commit_message,
@@ -43,7 +41,6 @@ def push_db_to_github(commit_message="Update database"):
                         sha=file_info.sha
                     )
                 except GithubException as ge:
-                    # 404 에러(파일이 실제로 저장소에 없는 경우)일 때만 새 파일 생성
                     if ge.status == 404:
                         repo.create_file(
                             path=DB_FILE,
@@ -54,6 +51,7 @@ def push_db_to_github(commit_message="Update database"):
                         raise ge
         except Exception as e:
             st.error(f"🚨 깃허브 백업 실패 원인: {e}")
+
 sync_db_from_github()
 
 
@@ -226,7 +224,6 @@ def delete_diary(username, date_str):
     conn.close()
     push_db_to_github(f"Delete diary entry for {date_str}")
 
-# 댓글 DB 함수들
 def add_comment(diary_username, diary_date, comment_username, comment_nickname, content):
     conn = get_connection()
     c = conn.cursor()
@@ -373,7 +370,7 @@ theme_cfg = THEME_STYLES[current_theme_key]
 main_color = st.session_state.main_color if st.session_state.main_color else theme_cfg["default_main"]
 app_title = theme_cfg["title"]
 
-# 동적 CSS 주입
+# 동적 CSS 주입 (달력 높이 확보 스타일 추가)
 st.markdown(f"""
     <style>
     @import url('{theme_cfg['font_import']}');
@@ -420,6 +417,11 @@ st.markdown(f"""
         background-color: {theme_cfg['card_bg']} !important;
         border-right: 1px solid {theme_cfg['card_border']} !important;
     }}
+
+    /* 달력 라이브러리 컨테이너 높이 보장 */
+    iframe[title="streamlit_calendar.calendar"] {{
+        min-height: 580px !important;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -458,6 +460,7 @@ if st.session_state.user is None:
                     st.session_state.birthdate = birthdate
                     st.session_state.theme = theme
                     st.session_state.main_color = m_color
+                    st.session_state.page = "secret_calendar"
                     st.success(f"{st.session_state.nickname}님 환영합니다!")
                     st.rerun()
                 else:
@@ -549,3 +552,222 @@ else:
             cleaned_nick = edit_nick.strip()
             if cleaned_nick:
                 update_user_profile(current_user, cleaned_nick, new_bday_str, selected_theme, selected_color)
+                st.session_state.nickname = cleaned_nick
+                st.session_state.birthdate = new_bday_str
+                st.session_state.theme = selected_theme
+                st.session_state.main_color = selected_color
+                st.success("테마 및 정보가 새로 적용되었습니다!")
+                st.rerun()
+            else:
+                st.warning("닉네임을 입력해 주세요.")
+
+    if st.sidebar.button("🔒 로그아웃"):
+        st.session_state.user = None
+        st.session_state.nickname = None
+        st.session_state.birthdate = None
+        st.session_state.page = "secret_calendar"
+        st.rerun()
+
+    st.sidebar.markdown("---")
+    
+    # 사이드바 라디오 메뉴 동기화
+    nav_index = 0 if st.session_state.page in ["secret_calendar", "diary_editor"] and not st.session_state.editor_is_public else 1
+    nav_choice = st.sidebar.radio("메뉴 선택", ["🔒 비밀일기", "🌐 공개일기"], index=nav_index)
+
+    if nav_choice == "🔒 비밀일기" and st.session_state.page == "public_calendar":
+        st.session_state.page = "secret_calendar"
+        st.session_state.editor_is_public = False
+        st.rerun()
+    elif nav_choice == "🌐 공개일기" and st.session_state.page == "secret_calendar":
+        st.session_state.page = "public_calendar"
+        st.session_state.editor_is_public = True
+        st.rerun()
+
+    st.title(app_title)
+
+    # PAGE 1: 🔒 비밀일기 페이지
+    if st.session_state.page == "secret_calendar":
+        st.header("🔒 나만의 비밀일기")
+        st.caption("날짜를 클릭하거나 선택하면 해당 날짜의 일기를 쓸 수 있습니다.")
+
+        secret_diaries = get_user_diaries(current_user, is_public_flag=False)
+
+        calendar_events = []
+        for date_str, diary_data in secret_diaries.items():
+            if diary_data.get("content") and diary_data["content"].strip():
+                calendar_events.append({
+                    "title": f"🔒 {diary_data['emotion']}",
+                    "start": date_str, "end": date_str, "allDay": True,
+                    "color": main_color
+                })
+
+        calendar_options = {
+            "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
+            "initialView": "dayGridMonth",
+            "selectable": True,
+            "height": 560
+        }
+
+        cal_res = calendar(
+            events=calendar_events, 
+            options=calendar_options, 
+            key=f"secret_diary_calendar_{st.session_state.theme}_{main_color}"
+        )
+
+        clicked_date = None
+        if cal_res and "dateClick" in cal_res:
+            clicked_date = cal_res["dateClick"]["date"].split("T")[0]
+        elif cal_res and "select" in cal_res:
+            clicked_date = cal_res["select"]["start"].split("T")[0]
+
+        if clicked_date:
+            st.session_state.selected_date = clicked_date
+            st.session_state.editor_is_public = False
+            st.session_state.page = "diary_editor"
+            st.rerun()
+
+    # PAGE 2: 🌐 공개일기 페이지
+    elif st.session_state.page == "public_calendar":
+        st.header("🌐 공유하는 공개일기")
+
+        public_tab1, public_tab2 = st.tabs(["🗓️ 내 공개일기 달력", "📖 모두의 이야기 모아보기"])
+
+        with public_tab1:
+            st.subheader("내 공개일기 달력")
+            my_public_diaries = get_user_diaries(current_user, is_public_flag=True)
+
+            calendar_events = []
+            for date_str, diary_data in my_public_diaries.items():
+                if diary_data.get("content") and diary_data["content"].strip():
+                    calendar_events.append({
+                        "title": f"🌐 {diary_data['emotion']}",
+                        "start": date_str, "end": date_str, "allDay": True,
+                        "color": main_color
+                    })
+
+            calendar_options = {
+                "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
+                "initialView": "dayGridMonth",
+                "selectable": True,
+                "height": 560
+            }
+
+            cal_res_pub = calendar(
+                events=calendar_events, 
+                options=calendar_options, 
+                key=f"public_diary_calendar_{st.session_state.theme}_{main_color}"
+            )
+
+            clicked_date_pub = None
+            if cal_res_pub and "dateClick" in cal_res_pub:
+                clicked_date_pub = cal_res_pub["dateClick"]["date"].split("T")[0]
+            elif cal_res_pub and "select" in cal_res_pub:
+                clicked_date_pub = cal_res_pub["select"]["start"].split("T")[0]
+
+            if clicked_date_pub:
+                st.session_state.selected_date = clicked_date_pub
+                st.session_state.editor_is_public = True
+                st.session_state.page = "diary_editor"
+                st.rerun()
+
+        with public_tab2:
+            st.subheader("모두가 남긴 공개 일기")
+            all_publics = get_all_public_diaries()
+            if all_publics:
+                for item in all_publics:
+                    with st.container():
+                        st.markdown(f"#### {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})")
+                        st.info(item['content'])
+                        
+                        comments = get_comments(item['username'], item['date'])
+                        with st.expander(f"💬 댓글 ({len(comments)})"):
+                            for c in comments:
+                                col_c1, col_c2 = st.columns([5, 1])
+                                with col_c1:
+                                    st.markdown(f"**{c['nickname']}**: {c['content']} *(<small>{c['created_at']}</small>)*", unsafe_allow_html=True)
+                                with col_c2:
+                                    if c['username'] == current_user:
+                                        if st.button("삭제", key=f"del_cmt_{c['id']}"):
+                                            delete_comment(c['id'])
+                                            st.rerun()
+
+                            new_cmt = st.text_input(
+                                "댓글 남기기", 
+                                key=f"cmt_input_{item['username']}_{item['date']}", 
+                                placeholder="따뜻한 한마디를 남겨주세요..."
+                            )
+                            if st.button("댓글 작성", key=f"btn_cmt_{item['username']}_{item['date']}"):
+                                if new_cmt.strip():
+                                    add_comment(item['username'], item['date'], current_user, current_nickname, new_cmt.strip())
+                                    st.success("댓글이 남겨졌습니다!")
+                                    st.rerun()
+                                else:
+                                    st.warning("내용을 입력해주세요.")
+                        st.markdown("---")
+            else:
+                st.write("🌿 아직 등록된 공개 일기가 없어요.")
+
+    # PAGE 3: 일기 작성 / 수정 페이지
+    elif st.session_state.page == "diary_editor":
+        selected_date = st.session_state.selected_date
+        is_public_mode = st.session_state.editor_is_public
+        mode_icon = "🌐 공개일기" if is_public_mode else "🔒 비밀일기"
+
+        st.header(f"✏️ {mode_icon} 작성/수정 ({selected_date})")
+
+        user_diaries = get_user_diaries(current_user, is_public_flag=is_public_mode)
+        has_existing = (
+            selected_date in user_diaries and 
+            bool(user_diaries[selected_date].get("content", "").strip())
+        )
+        
+        existing_data = user_diaries.get(selected_date, {})
+        saved_emotion = existing_data.get("emotion", "😊")
+        saved_content = existing_data.get("content", "")
+
+        default_emotion_index = 0
+        if saved_emotion in EMOJI_LIST:
+            default_emotion_index = EMOJI_LIST.index(saved_emotion)
+
+        selected_emotion_label = st.radio(
+            "이날의 감정을 선택해 주세요:",
+            options=STANDARD_EMOTIONS,
+            index=default_emotion_index,
+            horizontal=True,
+            key=f"editor_emotion_{selected_date}_{is_public_mode}"
+        )
+        selected_emoji = selected_emotion_label.split()[0]
+
+        diary_text = st.text_area(
+            "내용을 작성하거나 수정해 주세요:",
+            value=saved_content,
+            height=200,
+            placeholder="소소한 이야기라도 좋아요. 자유롭게 적어보세요...",
+            key=f"editor_text_{selected_date}_{is_public_mode}"
+        )
+
+        col1, col2, col3 = st.columns([2, 2, 1])
+        button_label = "💾 수정사항 저장하기" if has_existing else "🧸 마음 저장하기"
+        
+        with col1:
+            if st.button(button_label, use_container_width=True):
+                if diary_text.strip():
+                    save_diary(current_user, selected_date, selected_emoji, diary_text.strip(), is_public_mode)
+                    st.success("일기가 성공적으로 저장되었습니다!")
+                    st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
+                    st.rerun()
+                else:
+                    st.warning("내용을 입력해 주세요.")
+
+        with col2:
+            if st.button("🗓️ 달력으로 돌아가기", use_container_width=True):
+                st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
+                st.rerun()
+
+        with col3:
+            if has_existing:
+                if st.button("🗑️ 삭제", use_container_width=True):
+                    delete_diary(current_user, selected_date)
+                    st.success("일기가 삭제되었습니다.")
+                    st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
+                    st.rerun()
