@@ -2,6 +2,8 @@ import sqlite3
 import datetime
 import bcrypt
 import os
+import random
+import string
 import streamlit as st
 from streamlit_calendar import calendar
 from github import Github, GithubException
@@ -61,10 +63,14 @@ sync_db_from_github()
 def get_connection():
     return sqlite3.connect(DB_FILE, check_same_thread=False)
 
+def generate_invite_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
 def init_db():
     conn = get_connection()
     c = conn.cursor()
     
+    # 사용자 테이블 (초대코드 및 커플 ID 포함)
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -72,10 +78,14 @@ def init_db():
             nickname TEXT NOT NULL,
             birthdate TEXT DEFAULT '',
             theme TEXT DEFAULT '포근함',
-            main_color TEXT DEFAULT '#DDA15E'
+            main_color TEXT DEFAULT '#DDA15E',
+            invite_code TEXT UNIQUE,
+            couple_id TEXT DEFAULT '',
+            couple_start_date TEXT DEFAULT ''
         )
     ''')
     
+    # 일반 일기 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS diaries (
             username TEXT,
@@ -87,7 +97,21 @@ def init_db():
             FOREIGN KEY (username) REFERENCES users(username)
         )
     ''')
-    
+
+    # 커플 일기 테이블
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS couple_diaries (
+            couple_id TEXT,
+            date TEXT,
+            username TEXT,
+            nickname TEXT,
+            emotion TEXT,
+            content TEXT,
+            PRIMARY KEY (couple_id, date, username)
+        )
+    ''')
+
+    # 댓글 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS comments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,26 +124,36 @@ def init_db():
             FOREIGN KEY (diary_username, diary_date) REFERENCES diaries(username, date)
         )
     ''')
+
+    # 커플 댓글 테이블
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS couple_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            couple_id TEXT,
+            diary_date TEXT,
+            comment_username TEXT,
+            comment_nickname TEXT,
+            content TEXT,
+            created_at TEXT
+        )
+    ''')
     
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN nickname TEXT DEFAULT ''")
-    except sqlite3.OperationalError: pass
-        
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN birthdate TEXT DEFAULT ''")
-    except sqlite3.OperationalError: pass
-
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT '포근함'")
-    except sqlite3.OperationalError: pass
-
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN main_color TEXT DEFAULT '#DDA15E'")
-    except sqlite3.OperationalError: pass
-
-    try:
-        c.execute("ALTER TABLE diaries ADD COLUMN is_public INTEGER DEFAULT 0")
-    except sqlite3.OperationalError: pass
+    # 마이그레이션 안전 처리
+    cols = [
+        ("users", "nickname TEXT DEFAULT ''"),
+        ("users", "birthdate TEXT DEFAULT ''"),
+        ("users", "theme TEXT DEFAULT '포근함'"),
+        ("users", "main_color TEXT DEFAULT '#DDA15E'"),
+        ("users", "invite_code TEXT DEFAULT ''"),
+        ("users", "couple_id TEXT DEFAULT ''"),
+        ("users", "couple_start_date TEXT DEFAULT ''"),
+        ("diaries", "is_public INTEGER DEFAULT 0")
+    ]
+    for tbl, col in cols:
+        try:
+            c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
     conn.close()
@@ -131,11 +165,12 @@ def register_user(username, password, nickname, birthdate=""):
     conn = get_connection()
     c = conn.cursor()
     hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    code = generate_invite_code()
     try:
         c.execute('''
-            INSERT INTO users (username, password, nickname, birthdate, theme, main_color) 
-            VALUES (?, ?, ?, ?, '포근함', '#DDA15E')
-        ''', (username, hashed_pw, nickname, birthdate))
+            INSERT INTO users (username, password, nickname, birthdate, theme, main_color, invite_code) 
+            VALUES (?, ?, ?, ?, '포근함', '#DDA15E', ?)
+        ''', (username, hashed_pw, nickname, birthdate, code))
         conn.commit()
         push_db_to_github("New user registered")
         return True
@@ -147,14 +182,15 @@ def register_user(username, password, nickname, birthdate=""):
 def login_user(username, password):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password, nickname, birthdate, theme, main_color FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password, nickname, birthdate, theme, main_color, invite_code, couple_id, couple_start_date FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
-        stored_pw, nickname, birthdate, theme, main_color = row[0], row[1], row[2], row[3], row[4]
+        stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
-            return True, nickname, birthdate, (theme or '포근함'), (main_color or '#DDA15E')
-    return False, None, None, '포근함', '#DDA15E'
+            inv_code = row[5] if row[5] else generate_invite_code()
+            return True, row[1], row[2], (row[3] or '포근함'), (row[4] or '#DDA15E'), inv_code, row[6], row[7]
+    return False, None, None, '포근함', '#DDA15E', '', '', ''
 
 def update_user_profile(username, new_nickname, new_birthdate, new_theme, new_main_color):
     conn = get_connection()
@@ -167,6 +203,30 @@ def update_user_profile(username, new_nickname, new_birthdate, new_theme, new_ma
     conn.commit()
     conn.close()
     push_db_to_github(f"Update profile for user {username}")
+
+def connect_couple_by_code(my_username, partner_code, start_date_str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT username FROM users WHERE invite_code = ?", (partner_code,))
+    partner = c.fetchone()
+    
+    if not partner:
+        conn.close()
+        return False, "존재하지 않는 초대코드입니다."
+    
+    partner_username = partner[0]
+    if partner_username == my_username:
+        conn.close()
+        return False, "자신의 초대코드는 입력할 수 없습니다."
+
+    cid = f"couple_{min(my_username, partner_username)}_{max(my_username, partner_username)}"
+    
+    c.execute("UPDATE users SET couple_id = ?, couple_start_date = ? WHERE username IN (?, ?)", 
+              (cid, start_date_str, my_username, partner_username))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Couples connected")
+    return True, cid
 
 def get_user_diaries(username, is_public_flag):
     conn = get_connection()
@@ -224,6 +284,35 @@ def delete_diary(username, date_str):
     conn.close()
     push_db_to_github(f"Delete diary entry for {date_str}")
 
+# 커플 일기 함수
+def get_couple_diaries(couple_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT date, username, nickname, emotion, content FROM couple_diaries WHERE couple_id = ?", (couple_id,))
+    rows = c.fetchall()
+    conn.close()
+    
+    result = {}
+    for r in rows:
+        dt, un, nk, em, ct = r[0], r[1], r[2], r[3], r[4]
+        if dt not in result:
+            result[dt] = []
+        result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct})
+    return result
+
+def save_couple_diary(couple_id, date_str, username, nickname, emotion, content):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO couple_diaries (couple_id, date, username, nickname, emotion, content)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(couple_id, date, username) DO UPDATE SET
+            emotion=excluded.emotion, content=excluded.content, nickname=excluded.nickname
+    ''', (couple_id, date_str, username, nickname, emotion, content))
+    conn.commit()
+    conn.close()
+    push_db_to_github(f"Update couple diary for {date_str}")
+
 def add_comment(diary_username, diary_date, comment_username, comment_nickname, content):
     conn = get_connection()
     c = conn.cursor()
@@ -247,14 +336,7 @@ def get_comments(diary_username, diary_date):
     ''', (diary_username, diary_date))
     rows = c.fetchall()
     conn.close()
-    
-    comments = []
-    for r in rows:
-        comments.append({
-            "id": r[0], "username": r[1], "nickname": r[2],
-            "content": r[3], "created_at": r[4]
-        })
-    return comments
+    return [{"id": r[0], "username": r[1], "nickname": r[2], "content": r[3], "created_at": r[4]} for r in rows]
 
 def delete_comment(comment_id):
     conn = get_connection()
@@ -266,7 +348,7 @@ def delete_comment(comment_id):
 
 
 # =========================================================
-# 2. UI 및 드라마틱 테마 디자인 설정 (10종)
+# 2. UI 및 테마 설정 (드림코어 포함 11종)
 # =========================================================
 st.set_page_config(page_title="소소한 일기장", page_icon="🧸", layout="centered")
 
@@ -278,6 +360,14 @@ THEME_STYLES = {
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
         "radius": "16px", "shadow": "0 4px 12px rgba(0,0,0,0.05)"
+    },
+    "👁️‍🗨️ 드림코어": {
+        "title": "👁️‍🗨️ 몽환과 환상의 드림코어 다이어리 ☁️",
+        "bg": "#EAE6F8", "text": "#322A4A", "header": "#5D418D", 
+        "card_bg": "#F5F2FC", "card_border": "#C7B8E6", "default_main": "#7C5CBF",
+        "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
+        "font_family": "'Gamja Flower', cursive",
+        "radius": "20px", "shadow": "0 8px 24px rgba(124,92,191,0.2)"
     },
     "공주": {
         "title": "👑 공주님의 비밀 다이어리 🎀",
@@ -364,13 +454,19 @@ if "theme" not in st.session_state:
     st.session_state.theme = "포근함"
 if "main_color" not in st.session_state:
     st.session_state.main_color = "#DDA15E"
+if "invite_code" not in st.session_state:
+    st.session_state.invite_code = ""
+if "couple_id" not in st.session_state:
+    st.session_state.couple_id = ""
+if "couple_start_date" not in st.session_state:
+    st.session_state.couple_start_date = ""
 
 current_theme_key = st.session_state.theme if st.session_state.theme in THEME_STYLES else "포근함"
 theme_cfg = THEME_STYLES[current_theme_key]
 main_color = st.session_state.main_color if st.session_state.main_color else theme_cfg["default_main"]
 app_title = theme_cfg["title"]
 
-# 동적 CSS 주입 (달력 높이 확보 스타일 추가)
+# 동적 CSS
 st.markdown(f"""
     <style>
     @import url('{theme_cfg['font_import']}');
@@ -418,7 +514,6 @@ st.markdown(f"""
         border-right: 1px solid {theme_cfg['card_border']} !important;
     }}
 
-    /* 달력 라이브러리 컨테이너 높이 보장 */
     iframe[title="streamlit_calendar.calendar"] {{
         min-height: 580px !important;
     }}
@@ -432,10 +527,8 @@ if "selected_date" not in st.session_state:
     st.session_state.selected_date = today_str
 if "page" not in st.session_state:
     st.session_state.page = "secret_calendar"
-if "editor_is_public" not in st.session_state:
-    st.session_state.editor_is_public = False
 
-STANDARD_EMOTIONS = ["😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤"]
+STANDARD_EMOTIONS = ["😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤", "🥰 사랑"]
 EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
 
 
@@ -453,13 +546,16 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname, birthdate, theme, m_color = login_user(username_input, password_input)
+                is_success, nickname, birthdate, theme, m_color, inv_code, c_id, c_sdate = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
                     st.session_state.birthdate = birthdate
                     st.session_state.theme = theme
                     st.session_state.main_color = m_color
+                    st.session_state.invite_code = inv_code
+                    st.session_state.couple_id = c_id
+                    st.session_state.couple_start_date = c_sdate
                     st.session_state.page = "secret_calendar"
                     st.success(f"{st.session_state.nickname}님 환영합니다!")
                     st.rerun()
@@ -499,19 +595,29 @@ else:
     current_nickname = st.session_state.nickname
     user_birthdate = st.session_state.birthdate
     
-    # 생일 축하 로직
+    # 생일 축하
     if user_birthdate and len(user_birthdate) == 10:
         if user_birthdate[5:] == today_str[5:]:
             st.balloons()
             st.toast(f"🎂 {current_nickname}님, 생일을 진심으로 축하합니다! 🎉", icon="🎁")
 
-    # 사이드바 프로필 및 회원 정보/테마 수정
+    # 사이드바 프로필
     st.sidebar.title(app_title.split()[0] + " 일기장")
     st.sidebar.write(f"👤 **{current_nickname}** 님")
+    
+    # 커플 D-Day 표시
+    if st.session_state.couple_id and st.session_state.couple_start_date:
+        try:
+            s_dt = datetime.datetime.strptime(st.session_state.couple_start_date, "%Y-%m-%d").date()
+            d_day = (today_dt - s_dt).days + 1
+            st.sidebar.success(f"👩‍❤️‍👨 사랑한 지 **{d_day}일**째 💕")
+        except ValueError:
+            pass
+
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 내 정보 & 테마 설정
-    with st.sidebar.expander("✏️ 내 정보 & 테마 수정"):
+    # 내 정보 & 커플 설정
+    with st.sidebar.expander("✏️ 내 정보 & 커플 설정"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
         has_bday = bool(user_birthdate)
@@ -535,20 +641,15 @@ else:
             new_bday_str = ""
 
         st.markdown("---")
-        st.markdown("##### 🎨 테마 분위기 변경 (10종)")
+        st.markdown("##### 🎨 테마 분위기 변경 (11종)")
         theme_options = list(THEME_STYLES.keys())
         current_theme_idx = theme_options.index(st.session_state.theme) if st.session_state.theme in theme_options else 0
         
-        selected_theme = st.selectbox(
-            "테마 분위기",
-            theme_options,
-            index=current_theme_idx
-        )
-        
+        selected_theme = st.selectbox("테마 분위기", theme_options, index=current_theme_idx)
         suggested_color = THEME_STYLES[selected_theme]["default_main"] if selected_theme != st.session_state.theme else main_color
         selected_color = st.color_picker("포인트 메인 컬러", value=suggested_color)
 
-        if st.button("설정 저장하기", use_container_width=True):
+        if st.button("프로필/테마 저장", use_container_width=True):
             cleaned_nick = edit_nick.strip()
             if cleaned_nick:
                 update_user_profile(current_user, cleaned_nick, new_bday_str, selected_theme, selected_color)
@@ -556,40 +657,62 @@ else:
                 st.session_state.birthdate = new_bday_str
                 st.session_state.theme = selected_theme
                 st.session_state.main_color = selected_color
-                st.success("테마 및 정보가 새로 적용되었습니다!")
+                st.success("정보가 변경되었습니다!")
                 st.rerun()
-            else:
-                st.warning("닉네임을 입력해 주세요.")
+
+        st.markdown("---")
+        st.markdown("##### 👩‍❤️‍👨 커플 연결하기")
+        st.info(f"내 초대코드: **{st.session_state.invite_code}**")
+        
+        if not st.session_state.couple_id:
+            partner_code_input = st.text_input("상대방 초대코드 입력")
+            couple_start_input = st.date_input("연애 시작일", value=today_dt, max_value=today_dt)
+            
+            if st.button("커플 연결 신청", use_container_width=True):
+                if partner_code_input.strip():
+                    is_ok, msg = connect_couple_by_code(
+                        current_user, partner_code_input.strip().upper(), couple_start_input.strftime("%Y-%m-%d")
+                    )
+                    if is_ok:
+                        st.session_state.couple_id = msg
+                        st.session_state.couple_start_date = couple_start_input.strftime("%Y-%m-%d")
+                        st.success("커플 연결이 성공했습니다! 🎉")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        else:
+            st.success("❤️ 커플 연동 중입니다.")
 
     if st.sidebar.button("🔒 로그아웃"):
         st.session_state.user = None
         st.session_state.nickname = None
-        st.session_state.birthdate = None
         st.session_state.page = "secret_calendar"
         st.rerun()
 
     st.sidebar.markdown("---")
     
-    # 사이드바 라디오 메뉴 동기화
-    nav_index = 0 if st.session_state.page in ["secret_calendar", "diary_editor"] and not st.session_state.editor_is_public else 1
-    nav_choice = st.sidebar.radio("메뉴 선택", ["🔒 비밀일기", "🌐 공개일기"], index=nav_index)
+    # 사이드바 메뉴선택
+    menu_options = ["🔒 비밀일기", "🌐 공개일기"]
+    if st.session_state.couple_id:
+        menu_options.insert(1, "👩‍❤️‍👨 커플일기")
 
-    if nav_choice == "🔒 비밀일기" and st.session_state.page == "public_calendar":
+    nav_choice = st.sidebar.radio("메뉴 선택", menu_options)
+
+    if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
         st.session_state.page = "secret_calendar"
-        st.session_state.editor_is_public = False
         st.rerun()
-    elif nav_choice == "🌐 공개일기" and st.session_state.page == "secret_calendar":
+    elif nav_choice == "👩‍❤️‍👨 커플일기" and st.session_state.page not in ["couple_calendar", "couple_editor"]:
+        st.session_state.page = "couple_calendar"
+        st.rerun()
+    elif nav_choice == "🌐 공개일기" and st.session_state.page not in ["public_calendar", "public_editor"]:
         st.session_state.page = "public_calendar"
-        st.session_state.editor_is_public = True
         st.rerun()
 
     st.title(app_title)
 
-    # PAGE 1: 🔒 비밀일기 페이지
+    # PAGE 1: 🔒 비밀일기 달력
     if st.session_state.page == "secret_calendar":
         st.header("🔒 나만의 비밀일기")
-        st.caption("날짜를 클릭하거나 선택하면 해당 날짜의 일기를 쓸 수 있습니다.")
-
         secret_diaries = get_user_diaries(current_user, is_public_flag=False)
 
         calendar_events = []
@@ -601,18 +724,7 @@ else:
                     "color": main_color
                 })
 
-        calendar_options = {
-            "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
-            "initialView": "dayGridMonth",
-            "selectable": True,
-            "height": 560
-        }
-
-        cal_res = calendar(
-            events=calendar_events, 
-            options=calendar_options, 
-            key=f"secret_diary_calendar_{st.session_state.theme}_{main_color}"
-        )
+        cal_res = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"secret_cal_{st.session_state.theme}_{main_color}")
 
         clicked_date = None
         if cal_res and "dateClick" in cal_res:
@@ -622,56 +734,61 @@ else:
 
         if clicked_date:
             st.session_state.selected_date = clicked_date
-            st.session_state.editor_is_public = False
-            st.session_state.page = "diary_editor"
+            st.session_state.page = "secret_editor"
             st.rerun()
 
-    # PAGE 2: 🌐 공개일기 페이지
+    # PAGE 2: 👩‍❤️‍👨 커플일기 달력
+    elif st.session_state.page == "couple_calendar":
+        st.header("👩‍❤️‍👨 우리둘만의 커플일기")
+        couple_diaries = get_couple_diaries(st.session_state.couple_id)
+
+        calendar_events = []
+        for date_str, diary_list in couple_diaries.items():
+            for d in diary_list:
+                calendar_events.append({
+                    "title": f"💕 {d['nickname']}: {d['emotion']}",
+                    "start": date_str, "end": date_str, "allDay": True,
+                    "color": "#FF6B6B"
+                })
+
+        cal_res_c = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"couple_cal_{st.session_state.theme}_{main_color}")
+
+        clicked_date_c = None
+        if cal_res_c and "dateClick" in cal_res_c:
+            clicked_date_c = cal_res_c["dateClick"]["date"].split("T")[0]
+        elif cal_res_c and "select" in cal_res_c:
+            clicked_date_c = cal_res_c["select"]["start"].split("T")[0]
+
+        if clicked_date_c:
+            st.session_state.selected_date = clicked_date_c
+            st.session_state.page = "couple_editor"
+            st.rerun()
+
+    # PAGE 3: 🌐 공개일기 달력 / 모아보기
     elif st.session_state.page == "public_calendar":
         st.header("🌐 공유하는 공개일기")
+        tab1, tab2 = st.tabs(["🗓️ 내 공개일기 달력", "📖 모두의 이야기 모아보기"])
 
-        public_tab1, public_tab2 = st.tabs(["🗓️ 내 공개일기 달력", "📖 모두의 이야기 모아보기"])
-
-        with public_tab1:
-            st.subheader("내 공개일기 달력")
+        with tab1:
             my_public_diaries = get_user_diaries(current_user, is_public_flag=True)
+            calendar_events = [{
+                "title": f"🌐 {data['emotion']}", "start": d, "end": d, "allDay": True, "color": main_color
+            } for d, data in my_public_diaries.items() if data.get("content")]
 
-            calendar_events = []
-            for date_str, diary_data in my_public_diaries.items():
-                if diary_data.get("content") and diary_data["content"].strip():
-                    calendar_events.append({
-                        "title": f"🌐 {diary_data['emotion']}",
-                        "start": date_str, "end": date_str, "allDay": True,
-                        "color": main_color
-                    })
+            cal_res_p = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"public_cal_{st.session_state.theme}_{main_color}")
 
-            calendar_options = {
-                "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
-                "initialView": "dayGridMonth",
-                "selectable": True,
-                "height": 560
-            }
+            clicked_date_p = None
+            if cal_res_p and "dateClick" in cal_res_p:
+                clicked_date_p = cal_res_p["dateClick"]["date"].split("T")[0]
+            elif cal_res_p and "select" in cal_res_p:
+                clicked_date_p = cal_res_p["select"]["start"].split("T")[0]
 
-            cal_res_pub = calendar(
-                events=calendar_events, 
-                options=calendar_options, 
-                key=f"public_diary_calendar_{st.session_state.theme}_{main_color}"
-            )
-
-            clicked_date_pub = None
-            if cal_res_pub and "dateClick" in cal_res_pub:
-                clicked_date_pub = cal_res_pub["dateClick"]["date"].split("T")[0]
-            elif cal_res_pub and "select" in cal_res_pub:
-                clicked_date_pub = cal_res_pub["select"]["start"].split("T")[0]
-
-            if clicked_date_pub:
-                st.session_state.selected_date = clicked_date_pub
-                st.session_state.editor_is_public = True
-                st.session_state.page = "diary_editor"
+            if clicked_date_p:
+                st.session_state.selected_date = clicked_date_p
+                st.session_state.page = "public_editor"
                 st.rerun()
 
-        with public_tab2:
-            st.subheader("모두가 남긴 공개 일기")
+        with tab2:
             all_publics = get_all_public_diaries()
             if all_publics:
                 for item in all_publics:
@@ -682,92 +799,91 @@ else:
                         comments = get_comments(item['username'], item['date'])
                         with st.expander(f"💬 댓글 ({len(comments)})"):
                             for c in comments:
-                                col_c1, col_c2 = st.columns([5, 1])
-                                with col_c1:
-                                    st.markdown(f"**{c['nickname']}**: {c['content']} *(<small>{c['created_at']}</small>)*", unsafe_allow_html=True)
-                                with col_c2:
+                                c1, c2 = st.columns([5, 1])
+                                with c1: st.markdown(f"**{c['nickname']}**: {c['content']} *(<small>{c['created_at']}</small>)*", unsafe_allow_html=True)
+                                with c2:
                                     if c['username'] == current_user:
                                         if st.button("삭제", key=f"del_cmt_{c['id']}"):
                                             delete_comment(c['id'])
                                             st.rerun()
 
-                            new_cmt = st.text_input(
-                                "댓글 남기기", 
-                                key=f"cmt_input_{item['username']}_{item['date']}", 
-                                placeholder="따뜻한 한마디를 남겨주세요..."
-                            )
-                            if st.button("댓글 작성", key=f"btn_cmt_{item['username']}_{item['date']}"):
+                            new_cmt = st.text_input("댓글 작성", key=f"cmt_in_{item['username']}_{item['date']}")
+                            if st.button("댓글 작성 완료", key=f"btn_cmt_{item['username']}_{item['date']}"):
                                 if new_cmt.strip():
                                     add_comment(item['username'], item['date'], current_user, current_nickname, new_cmt.strip())
                                     st.success("댓글이 남겨졌습니다!")
                                     st.rerun()
-                                else:
-                                    st.warning("내용을 입력해주세요.")
                         st.markdown("---")
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 3: 일기 작성 / 수정 페이지
-    elif st.session_state.page == "diary_editor":
-        selected_date = st.session_state.selected_date
-        is_public_mode = st.session_state.editor_is_public
-        mode_icon = "🌐 공개일기" if is_public_mode else "🔒 비밀일기"
+    # PAGE 4: 비밀/공개 일기 에디터
+    elif st.session_state.page in ["secret_editor", "public_editor"]:
+        s_date = st.session_state.selected_date
+        is_pub = (st.session_state.page == "public_editor")
+        title_prefix = "🌐 공개일기" if is_pub else "🔒 비밀일기"
 
-        st.header(f"✏️ {mode_icon} 작성/수정 ({selected_date})")
+        st.header(f"✏️ {title_prefix} 작성/수정 ({s_date})")
+        diaries = get_user_diaries(current_user, is_public_flag=is_pub)
+        has_ex = s_date in diaries and bool(diaries[s_date].get("content", "").strip())
+        ex_data = diaries.get(s_date, {})
 
-        user_diaries = get_user_diaries(current_user, is_public_flag=is_public_mode)
-        has_existing = (
-            selected_date in user_diaries and 
-            bool(user_diaries[selected_date].get("content", "").strip())
-        )
-        
-        existing_data = user_diaries.get(selected_date, {})
-        saved_emotion = existing_data.get("emotion", "😊")
-        saved_content = existing_data.get("content", "")
+        idx = EMOJI_LIST.index(ex_data.get("emotion")) if ex_data.get("emotion") in EMOJI_LIST else 0
+        sel_emo = st.radio("이날의 감정:", STANDARD_EMOTIONS, index=idx, horizontal=True)
+        sel_emoji = sel_emo.split()[0]
 
-        default_emotion_index = 0
-        if saved_emotion in EMOJI_LIST:
-            default_emotion_index = EMOJI_LIST.index(saved_emotion)
-
-        selected_emotion_label = st.radio(
-            "이날의 감정을 선택해 주세요:",
-            options=STANDARD_EMOTIONS,
-            index=default_emotion_index,
-            horizontal=True,
-            key=f"editor_emotion_{selected_date}_{is_public_mode}"
-        )
-        selected_emoji = selected_emotion_label.split()[0]
-
-        diary_text = st.text_area(
-            "내용을 작성하거나 수정해 주세요:",
-            value=saved_content,
-            height=200,
-            placeholder="소소한 이야기라도 좋아요. 자유롭게 적어보세요...",
-            key=f"editor_text_{selected_date}_{is_public_mode}"
-        )
+        txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=200)
 
         col1, col2, col3 = st.columns([2, 2, 1])
-        button_label = "💾 수정사항 저장하기" if has_existing else "🧸 마음 저장하기"
-        
         with col1:
-            if st.button(button_label, use_container_width=True):
-                if diary_text.strip():
-                    save_diary(current_user, selected_date, selected_emoji, diary_text.strip(), is_public_mode)
-                    st.success("일기가 성공적으로 저장되었습니다!")
-                    st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
+            if st.button("💾 일기 저장", use_container_width=True):
+                if txt.strip():
+                    save_diary(current_user, s_date, sel_emoji, txt.strip(), is_pub)
+                    st.success("일기가 저장되었습니다!")
+                    st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                     st.rerun()
-                else:
-                    st.warning("내용을 입력해 주세요.")
-
         with col2:
             if st.button("🗓️ 달력으로 돌아가기", use_container_width=True):
-                st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
+                st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
+                st.rerun()
+        with col3:
+            if has_ex and st.button("🗑️ 삭제", use_container_width=True):
+                delete_diary(current_user, s_date)
+                st.success("일기가 삭제되었습니다.")
+                st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-        with col3:
-            if has_existing:
-                if st.button("🗑️ 삭제", use_container_width=True):
-                    delete_diary(current_user, selected_date)
-                    st.success("일기가 삭제되었습니다.")
-                    st.session_state.page = "public_calendar" if is_public_mode else "secret_calendar"
+    # PAGE 5: 커플일기 에디터
+    elif st.session_state.page == "couple_editor":
+        s_date = st.session_state.selected_date
+        cid = st.session_state.couple_id
+        st.header(f"👩‍❤️‍👨 커플일기 작성 ({s_date})")
+
+        c_diaries = get_couple_diaries(cid).get(s_date, [])
+        my_c_diary = next((d for d in c_diaries if d['username'] == current_user), None)
+        partner_c_diary = next((d for d in c_diaries if d['username'] != current_user), None)
+
+        if partner_c_diary:
+            st.subheader(f"💕 연인({partner_c_diary['nickname']})의 일기")
+            st.info(f"{partner_c_diary['emotion']} {partner_c_diary['content']}")
+            st.markdown("---")
+
+        st.subheader("내 커플일기 쓰기")
+        idx = EMOJI_LIST.index(my_c_diary['emotion']) if my_c_diary and my_c_diary['emotion'] in EMOJI_LIST else 0
+        sel_emo = st.radio("오늘 연인에게 전할 감정:", STANDARD_EMOTIONS, index=idx, horizontal=True)
+        sel_emoji = sel_emo.split()[0]
+
+        txt = st.text_area("연인과 공유할 일기 내용:", value=my_c_diary['content'] if my_c_diary else "", height=180)
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("💖 커플일기 저장", use_container_width=True):
+                if txt.strip():
+                    save_couple_diary(cid, s_date, current_user, current_nickname, sel_emoji, txt.strip())
+                    st.success("커플일기가 저장되었습니다!")
+                    st.session_state.page = "couple_calendar"
                     st.rerun()
+        with col2:
+            if st.button("🗓️ 커플 달력으로 돌아가기", use_container_width=True):
+                st.session_state.page = "couple_calendar"
+                st.rerun()
