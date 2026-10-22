@@ -42,8 +42,11 @@ def push_db_to_github(commit_message="Update database"):
                 except GithubException:
                     repo.create_file(DB_FILE, commit_message, content)
         except Exception as e:
-            st.warning(f"깃허브 백업 중 오류 발생: {e}")
-
+            # 💡 기존의 st.warning 대신 st.error로 바꿔서 빨간 박스로 에러를 띄웁니다.
+            st.error(f"🚨 깃허브 백업 실패 원인: {e}")
+    else:
+        # 💡 Secrets 정보를 못 찾으면 이 문구가 뜹니다.
+        st.error("🚨 Streamlit Secrets에 GITHUB_TOKEN 또는 GITHUB_REPO가 설정되지 않았습니다.")
 # 앱 실행 시 깃허브에서 DB 동기화
 sync_db_from_github()
 
