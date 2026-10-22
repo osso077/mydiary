@@ -32,14 +32,28 @@ def push_db_to_github(commit_message="Update database"):
                 with open(DB_FILE, "rb") as f:
                     content = f.read()
                 
+                # 1. GitHub 저장소에 기존 diary_app.db 파일이 존재하는지 조회
                 try:
                     file_info = repo.get_contents(DB_FILE)
-                    repo.update_file(DB_FILE, commit_message, content, file_info.sha)
-                except GithubException:
-                    repo.create_file(DB_FILE, commit_message, content)
+                    # 기존 파일이 있다면 sha 값을 명시하여 update
+                    repo.update_file(
+                        path=DB_FILE,
+                        message=commit_message,
+                        content=content,
+                        sha=file_info.sha
+                    )
+                except GithubException as ge:
+                    # 404 에러(파일이 실제로 저장소에 없는 경우)일 때만 새 파일 생성
+                    if ge.status == 404:
+                        repo.create_file(
+                            path=DB_FILE,
+                            message=commit_message,
+                            content=content
+                        )
+                    else:
+                        raise ge
         except Exception as e:
             st.error(f"🚨 깃허브 백업 실패 원인: {e}")
-
 sync_db_from_github()
 
 
