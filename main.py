@@ -70,7 +70,6 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
     
-    # 사용자 테이블 (초대코드 및 커플 ID 포함)
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -85,7 +84,6 @@ def init_db():
         )
     ''')
     
-    # 일반 일기 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS diaries (
             username TEXT,
@@ -98,7 +96,6 @@ def init_db():
         )
     ''')
 
-    # 커플 일기 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS couple_diaries (
             couple_id TEXT,
@@ -111,7 +108,6 @@ def init_db():
         )
     ''')
 
-    # 댓글 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS comments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,20 +121,6 @@ def init_db():
         )
     ''')
 
-    # 커플 댓글 테이블
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS couple_comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            couple_id TEXT,
-            diary_date TEXT,
-            comment_username TEXT,
-            comment_nickname TEXT,
-            content TEXT,
-            created_at TEXT
-        )
-    ''')
-    
-    # 마이그레이션 안전 처리
     cols = [
         ("users", "nickname TEXT DEFAULT ''"),
         ("users", "birthdate TEXT DEFAULT ''"),
@@ -284,7 +266,6 @@ def delete_diary(username, date_str):
     conn.close()
     push_db_to_github(f"Delete diary entry for {date_str}")
 
-# 커플 일기 함수
 def get_couple_diaries(couple_id):
     conn = get_connection()
     c = conn.cursor()
@@ -348,11 +329,19 @@ def delete_comment(comment_id):
 
 
 # =========================================================
-# 2. UI 및 테마 설정 (드림코어 포함 11종)
+# 2. UI 및 리얼 드림코어(Dreamcore) 연출 포함 테마 (11종)
 # =========================================================
-st.set_page_config(page_title="소소한 일기장", page_icon="🧸", layout="centered")
+st.set_page_config(page_title="소소한 일기장", page_icon="👁️‍🗨️", layout="centered")
 
 THEME_STYLES = {
+    "👁️‍🗨️ 드림코어": {
+        "title": "👁️‍🗨️ Have you been here before? ☁️",
+        "bg": "#120E1A", "text": "#D4C7E7", "header": "#A882DD", 
+        "card_bg": "#1D162B", "card_border": "#6B4899", "default_main": "#8B5CF6",
+        "font_import": "https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Gamja+Flower&display=swap",
+        "font_family": "'Gamja Flower', 'Cinzel Decorative', cursive",
+        "radius": "28px", "shadow": "0 0 20px rgba(139, 92, 246, 0.4), inset 0 0 10px rgba(168, 130, 221, 0.2)"
+    },
     "포근함": {
         "title": "🧸 소소하고 포근한 일기장",
         "bg": "#FAF6F0", "text": "#4A3E3D", "header": "#6C5B52", 
@@ -360,14 +349,6 @@ THEME_STYLES = {
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
         "radius": "16px", "shadow": "0 4px 12px rgba(0,0,0,0.05)"
-    },
-    "👁️‍🗨️ 드림코어": {
-        "title": "👁️‍🗨️ 몽환과 환상의 드림코어 다이어리 ☁️",
-        "bg": "#EAE6F8", "text": "#322A4A", "header": "#5D418D", 
-        "card_bg": "#F5F2FC", "card_border": "#C7B8E6", "default_main": "#7C5CBF",
-        "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
-        "font_family": "'Gamja Flower', cursive",
-        "radius": "20px", "shadow": "0 8px 24px rgba(124,92,191,0.2)"
     },
     "공주": {
         "title": "👑 공주님의 비밀 다이어리 🎀",
@@ -451,9 +432,9 @@ if "nickname" not in st.session_state:
 if "birthdate" not in st.session_state:
     st.session_state.birthdate = None
 if "theme" not in st.session_state:
-    st.session_state.theme = "포근함"
+    st.session_state.theme = "👁️‍🗨️ 드림코어"
 if "main_color" not in st.session_state:
-    st.session_state.main_color = "#DDA15E"
+    st.session_state.main_color = "#8B5CF6"
 if "invite_code" not in st.session_state:
     st.session_state.invite_code = ""
 if "couple_id" not in st.session_state:
@@ -461,12 +442,12 @@ if "couple_id" not in st.session_state:
 if "couple_start_date" not in st.session_state:
     st.session_state.couple_start_date = ""
 
-current_theme_key = st.session_state.theme if st.session_state.theme in THEME_STYLES else "포근함"
+current_theme_key = st.session_state.theme if st.session_state.theme in THEME_STYLES else "👁️‍🗨️ 드림코어"
 theme_cfg = THEME_STYLES[current_theme_key]
 main_color = st.session_state.main_color if st.session_state.main_color else theme_cfg["default_main"]
 app_title = theme_cfg["title"]
 
-# 동적 CSS
+# 동적 CSS 주입
 st.markdown(f"""
     <style>
     @import url('{theme_cfg['font_import']}');
@@ -481,6 +462,7 @@ st.markdown(f"""
         color: {theme_cfg['header']} !important;
         font-family: {theme_cfg['font_family']} !important;
         font-weight: bold;
+        letter-spacing: 1px;
     }}
     
     .stTextArea textarea, .stTextInput input, div[data-testid="stForm"] {{
@@ -501,12 +483,12 @@ st.markdown(f"""
         font-weight: bold !important;
         box-shadow: {theme_cfg['shadow']} !important;
         font-family: {theme_cfg['font_family']} !important;
-        transition: all 0.2s ease-in-out;
+        transition: all 0.25s ease-in-out;
     }}
     
     div.stButton > button:hover {{
-        opacity: 0.88;
-        transform: translateY(-2px);
+        opacity: 0.9;
+        transform: translateY(-3px) scale(1.02);
     }}
     
     section[data-testid="stSidebar"] {{
@@ -528,7 +510,7 @@ if "selected_date" not in st.session_state:
 if "page" not in st.session_state:
     st.session_state.page = "secret_calendar"
 
-STANDARD_EMOTIONS = ["😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤", "🥰 사랑"]
+STANDARD_EMOTIONS = ["👁️‍🗨️ 몽환", "😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤", "🥰 사랑"]
 EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
 
 
@@ -595,17 +577,14 @@ else:
     current_nickname = st.session_state.nickname
     user_birthdate = st.session_state.birthdate
     
-    # 생일 축하
     if user_birthdate and len(user_birthdate) == 10:
         if user_birthdate[5:] == today_str[5:]:
             st.balloons()
             st.toast(f"🎂 {current_nickname}님, 생일을 진심으로 축하합니다! 🎉", icon="🎁")
 
-    # 사이드바 프로필
     st.sidebar.title(app_title.split()[0] + " 일기장")
     st.sidebar.write(f"👤 **{current_nickname}** 님")
     
-    # 커플 D-Day 표시
     if st.session_state.couple_id and st.session_state.couple_start_date:
         try:
             s_dt = datetime.datetime.strptime(st.session_state.couple_start_date, "%Y-%m-%d").date()
@@ -616,7 +595,6 @@ else:
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 내 정보 & 커플 설정
     with st.sidebar.expander("✏️ 내 정보 & 커플 설정"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
@@ -691,7 +669,6 @@ else:
 
     st.sidebar.markdown("---")
     
-    # 사이드바 메뉴선택
     menu_options = ["🔒 비밀일기", "🌐 공개일기"]
     if st.session_state.couple_id:
         menu_options.insert(1, "👩‍❤️‍👨 커플일기")
