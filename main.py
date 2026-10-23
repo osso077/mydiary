@@ -97,7 +97,6 @@ def init_db():
         )
     ''')
 
-    # 교환일기 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS exchange_diaries (
             exchange_id TEXT,
@@ -341,7 +340,7 @@ THEME_STYLES = {
         "title": "👁️‍🗨️ Have you been here before? ☁️",
         "bg": "#120E1A", "text": "#D4C7E7", "header": "#A882DD", 
         "card_bg": "#1D162B", "card_border": "#6B4899", "default_main": "#8B5CF6",
-        "secondary_main": "#06B6D4", # 드림코어 전용 멀티 메인 컬러 (퍼플 + 시안)
+        "secondary_main": "#06B6D4",
         "font_import": "https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', 'Cinzel Decorative', cursive",
         "radius": "28px", "shadow": "0 0 20px rgba(139, 92, 246, 0.4), inset 0 0 10px rgba(6, 182, 212, 0.2)"
@@ -465,7 +464,7 @@ secondary_color = theme_cfg.get("secondary_main", main_color)
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입 (로그인 후 적용)
+# 동적 CSS 주입 (달력 화살표 및 Today 버튼 완벽 동기화)
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -494,7 +493,6 @@ if st.session_state.user is not None:
             font-family: {theme_cfg['font_family']} !important;
         }}
         
-        /* 버튼 및 강조 아이콘 멀티 컬러 적용 (드림코어 등) */
         div.stButton > button {{
             background: linear-gradient(135deg, {main_color} 0%, {secondary_color} 100%) !important;
             color: white !important;
@@ -517,17 +515,40 @@ if st.session_state.user is not None:
             border-right: 1px solid {theme_cfg['card_border']} !important;
         }}
 
-        /* 캘린더 내부 화살표, 오늘(Today) 버튼, 선택 영역 메인컬러 일체화 */
-        .fc .fc-button-primary {{
+        /* -------------------------------------------------- */
+        /* 달력 버튼(Today, 화살표 등) 및 헤더 테마 색상 강제 지정 */
+        /* -------------------------------------------------- */
+        .fc .fc-button, .fc .fc-button-primary, .fc-button-button {{
             background-color: {main_color} !important;
             border-color: {main_color} !important;
+            color: white !important;
+            box-shadow: none !important;
+            border-radius: 8px !important;
+            font-weight: bold !important;
         }}
-        .fc .fc-button-primary:hover {{
+        
+        .fc .fc-button:hover, .fc .fc-button-primary:hover {{
             background-color: {secondary_color} !important;
             border-color: {secondary_color} !important;
+            opacity: 0.9 !important;
         }}
+
+        .fc .fc-button-primary:disabled {{
+            background-color: {main_color} !important;
+            border-color: {main_color} !important;
+            opacity: 0.6 !important;
+        }}
+
+        /* 오늘 날짜 영역 강조 */
         .fc-daygrid-day.fc-day-today {{
-            background-color: rgba(139, 92, 246, 0.1) !important;
+            background-color: rgba(139, 92, 246, 0.15) !important;
+        }}
+
+        /* 달력 제목 폰트 색상 및 스타일 */
+        .fc-toolbar-title {{
+            color: {theme_cfg['header']} !important;
+            font-family: {theme_cfg['font_family']} !important;
+            font-weight: bold !important;
         }}
 
         iframe[title="streamlit_calendar.calendar"] {{
@@ -605,7 +626,7 @@ if st.session_state.user is None:
                 st.warning("아이디, 비밀번호, 닉네임은 필수 입력사항입니다.")
 
 # =========================================================
-# 4. 메인 서비스 화면 (맞춤 테마 적용)
+# 4. 메인 서비스 화면 (맞춤 테마 및 메인 컬러 적용)
 # =========================================================
 else:
     current_user = st.session_state.user
@@ -620,7 +641,7 @@ else:
     st.sidebar.title(app_title.split()[0] + " 일기장")
     st.sidebar.write(f"👤 **{current_nickname}** 님")
     
-    # 교환일기 D-Day 표시 (친구/연인 구분)
+    # 교환일기 D-Day 표시
     if st.session_state.exchange_id and st.session_state.exchange_start_date:
         try:
             s_dt = datetime.datetime.strptime(st.session_state.exchange_start_date, "%Y-%m-%d").date()
