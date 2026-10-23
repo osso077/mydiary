@@ -698,7 +698,7 @@ else:
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 1. 내 정보 프로필 관리 전용 (완전 분리)
+    # 1. 내 정보 프로필 관리 전용
     with st.sidebar.expander("✏️ 내 정보 관리 (프로필)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
@@ -731,7 +731,7 @@ else:
                 st.success("프로필 정보가 수정되었습니다!")
                 st.rerun()
 
-    # 2. 테마 및 색상 설정 전용 (완전 분리)
+    # 2. 테마 및 색상 설정 전용
     with st.sidebar.expander("🎨 테마 & 색상 설정"):
         theme_options = list(THEME_STYLES.keys())
         current_theme_idx = theme_options.index(st.session_state.theme) if st.session_state.theme in theme_options else 0
@@ -754,14 +754,6 @@ else:
             st.session_state.sub_color = selected_sub
             st.success("테마와 색상이 적용되었습니다!")
             st.rerun()
-
-    # 3. 교환일기 상태 전용
-    with st.sidebar.expander("💌 내 초대코드 & 교환일기 상태"):
-        st.info(f"내 초대코드: **{st.session_state.invite_code}**")
-        if st.session_state.exchange_id:
-            st.success(f"💌 [{st.session_state.exchange_type}] 교환일기가 연결되어 있습니다.")
-        else:
-            st.warning("아직 연결된 교환일기가 없습니다.")
 
     if st.sidebar.button("🔒 로그아웃"):
         st.session_state.user = None
