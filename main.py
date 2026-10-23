@@ -79,6 +79,7 @@ def init_db():
             birthdate TEXT DEFAULT '',
             theme TEXT DEFAULT '포근함',
             main_color TEXT DEFAULT '#DDA15E',
+            sub_color TEXT DEFAULT '#BC6C25',
             invite_code TEXT UNIQUE,
             exchange_id TEXT DEFAULT '',
             exchange_type TEXT DEFAULT '연인',
@@ -128,6 +129,7 @@ def init_db():
         ("users", "birthdate TEXT DEFAULT ''"),
         ("users", "theme TEXT DEFAULT '포근함'"),
         ("users", "main_color TEXT DEFAULT '#DDA15E'"),
+        ("users", "sub_color TEXT DEFAULT '#BC6C25'"),
         ("users", "invite_code TEXT DEFAULT ''"),
         ("users", "exchange_id TEXT DEFAULT ''"),
         ("users", "exchange_type TEXT DEFAULT '연인'"),
@@ -153,8 +155,8 @@ def register_user(username, password, nickname, birthdate=""):
     code = generate_invite_code()
     try:
         c.execute('''
-            INSERT INTO users (username, password, nickname, birthdate, theme, main_color, invite_code) 
-            VALUES (?, ?, ?, ?, '포근함', '#DDA15E', ?)
+            INSERT INTO users (username, password, nickname, birthdate, theme, main_color, sub_color, invite_code) 
+            VALUES (?, ?, ?, ?, '포근함', '#DDA15E', '#BC6C25', ?)
         ''', (username, hashed_pw, nickname, birthdate, code))
         conn.commit()
         push_db_to_github("New user registered")
@@ -167,24 +169,24 @@ def register_user(username, password, nickname, birthdate=""):
 def login_user(username, password):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password, nickname, birthdate, theme, main_color, invite_code, exchange_id, exchange_type, exchange_start_date FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password, nickname, birthdate, theme, main_color, sub_color, invite_code, exchange_id, exchange_type, exchange_start_date FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
         stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
-            inv_code = row[5] if row[5] else generate_invite_code()
-            return True, row[1], row[2], (row[3] or '포근함'), (row[4] or '#DDA15E'), inv_code, row[6], row[7], row[8]
-    return False, None, None, '포근함', '#DDA15E', '', '', '연인', ''
+            inv_code = row[6] if row[6] else generate_invite_code()
+            return True, row[1], row[2], (row[3] or '포근함'), (row[4] or '#DDA15E'), (row[5] or '#BC6C25'), inv_code, row[7], row[8], row[9]
+    return False, None, None, '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
 
-def update_user_profile(username, new_nickname, new_birthdate, new_theme, new_main_color):
+def update_user_profile(username, new_nickname, new_birthdate, new_theme, new_main_color, new_sub_color):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
         UPDATE users 
-        SET nickname = ?, birthdate = ?, theme = ?, main_color = ? 
+        SET nickname = ?, birthdate = ?, theme = ?, main_color = ?, sub_color = ? 
         WHERE username = ?
-    ''', (new_nickname, new_birthdate, new_theme, new_main_color, username))
+    ''', (new_nickname, new_birthdate, new_theme, new_main_color, new_sub_color, username))
     conn.commit()
     conn.close()
     push_db_to_github(f"Update profile for user {username}")
@@ -340,17 +342,15 @@ THEME_STYLES = {
     "👁️‍🗨️ 드림코어": {
         "title": "👁️‍🗨️ Have you been here before? ☁️",
         "bg": "#120E1A", "text": "#D4C7E7", "header": "#A882DD", 
-        "card_bg": "#1D162B", "card_border": "#6B4899", "default_main": "#8B5CF6",
-        "secondary_main": "#06B6D4",
+        "card_bg": "#1D162B", "card_border": "#6B4899", "default_main": "#8B5CF6", "default_sub": "#06B6D4",
         "font_import": "https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', 'Cinzel Decorative', cursive",
-        "radius": "28px", "shadow": "0 0 20px rgba(139, 92, 246, 0.4), inset 0 0 10px rgba(6, 182, 212, 0.2)"
+        "radius": "28px", "shadow": "0 0 20px rgba(139, 92, 246, 0.4)"
     },
     "포근함": {
         "title": "🧸 소소하고 포근한 일기장",
         "bg": "#FAF6F0", "text": "#4A3E3D", "header": "#6C5B52", 
-        "card_bg": "#FFFFFF", "card_border": "#E3D5CA", "default_main": "#DDA15E",
-        "secondary_main": "#BC6C25",
+        "card_bg": "#FFFFFF", "card_border": "#E3D5CA", "default_main": "#DDA15E", "default_sub": "#BC6C25",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
         "radius": "16px", "shadow": "0 4px 12px rgba(0,0,0,0.05)"
@@ -358,8 +358,7 @@ THEME_STYLES = {
     "공주": {
         "title": "👑 공주님의 비밀 다이어리 🎀",
         "bg": "#FFF0F5", "text": "#5C3D46", "header": "#D81B60", 
-        "card_bg": "#FFFFFF", "card_border": "#FFB6C1", "default_main": "#FF69B4",
-        "secondary_main": "#FF1493",
+        "card_bg": "#FFFFFF", "card_border": "#FFB6C1", "default_main": "#FF69B4", "default_sub": "#FF1493",
         "font_import": "https://fonts.googleapis.com/css2?family=Single+Day&display=swap",
         "font_family": "'Single Day', cursive",
         "radius": "24px", "shadow": "0 8px 20px rgba(255,105,180,0.15)"
@@ -367,8 +366,7 @@ THEME_STYLES = {
     "귀여움": {
         "title": "🐣 병아리의 자그마한 일기장 🐥",
         "bg": "#FFFBEA", "text": "#4A4438", "header": "#D97706", 
-        "card_bg": "#FFFFFF", "card_border": "#FFE599", "default_main": "#FFB000",
-        "secondary_main": "#F59E0B",
+        "card_bg": "#FFFFFF", "card_border": "#FFE599", "default_main": "#FFB000", "default_sub": "#F59E0B",
         "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', cursive",
         "radius": "20px", "shadow": "0 6px 14px rgba(255,176,0,0.15)"
@@ -376,8 +374,7 @@ THEME_STYLES = {
     "심플": {
         "title": "MINIMAL DIARY",
         "bg": "#F8F9FA", "text": "#212529", "header": "#1A1D20", 
-        "card_bg": "#FFFFFF", "card_border": "#DEE2E6", "default_main": "#343A40",
-        "secondary_main": "#495057",
+        "card_bg": "#FFFFFF", "card_border": "#DEE2E6", "default_main": "#343A40", "default_sub": "#495057",
         "font_import": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500&display=swap",
         "font_family": "'Noto Sans KR', sans-serif",
         "radius": "4px", "shadow": "none"
@@ -385,8 +382,7 @@ THEME_STYLES = {
     "클래식": {
         "title": "📖 서재 속 양장본 일기장",
         "bg": "#F4F1EA", "text": "#2C2C2C", "header": "#3D312A", 
-        "card_bg": "#FCFBF7", "card_border": "#D2C7B8", "default_main": "#8C6D53",
-        "secondary_main": "#654321",
+        "card_bg": "#FCFBF7", "card_border": "#D2C7B8", "default_main": "#8C6D53", "default_sub": "#654321",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap",
         "font_family": "'Gowun Batang', serif",
         "radius": "8px", "shadow": "0 2px 8px rgba(61,49,42,0.08)"
@@ -394,8 +390,7 @@ THEME_STYLES = {
     "🌙 다크(밤)": {
         "title": "🌙 한밤중의 비밀 기록",
         "bg": "#121216", "text": "#E2E8F0", "header": "#BB86FC", 
-        "card_bg": "#1E1E24", "card_border": "#2D2D38", "default_main": "#BB86FC",
-        "secondary_main": "#03DAC6",
+        "card_bg": "#1E1E24", "card_border": "#2D2D38", "default_main": "#BB86FC", "default_sub": "#03DAC6",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
         "radius": "12px", "shadow": "0 4px 16px rgba(0,0,0,0.4)"
@@ -403,8 +398,7 @@ THEME_STYLES = {
     "👾 레트로": {
         "title": "📟 Y2K 감성 다이어리 👾",
         "bg": "#E0F7FA", "text": "#004D40", "header": "#00838F", 
-        "card_bg": "#FFFFFF", "card_border": "#80DEEA", "default_main": "#00ACC1",
-        "secondary_main": "#FF5722",
+        "card_bg": "#FFFFFF", "card_border": "#80DEEA", "default_main": "#00ACC1", "default_sub": "#FF5722",
         "font_import": "https://fonts.googleapis.com/css2?family=DungGeunMo&display=swap",
         "font_family": "'DungGeunMo', monospace",
         "radius": "0px", "shadow": "4px 4px 0px #004D40"
@@ -412,8 +406,7 @@ THEME_STYLES = {
     "🌊 바다": {
         "title": "🌊 푸른 바다 속 이야기 🐬",
         "bg": "#EBF4F6", "text": "#1E3E62", "header": "#0B2F9F", 
-        "card_bg": "#FFFFFF", "card_border": "#B0C4DE", "default_main": "#0284C7",
-        "secondary_main": "#0369A1",
+        "card_bg": "#FFFFFF", "card_border": "#B0C4DE", "default_main": "#0284C7", "default_sub": "#0369A1",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
         "radius": "18px", "shadow": "0 8px 16px rgba(2,132,199,0.12)"
@@ -421,8 +414,7 @@ THEME_STYLES = {
     "🌲 숲": {
         "title": "🍃 울창한 숲속 비밀노트 🌲",
         "bg": "#F1F8F5", "text": "#1C352D", "header": "#2D5A27", 
-        "card_bg": "#FFFFFF", "card_border": "#C2E0D2", "default_main": "#15803D",
-        "secondary_main": "#166534",
+        "card_bg": "#FFFFFF", "card_border": "#C2E0D2", "default_main": "#15803D", "default_sub": "#166534",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap",
         "font_family": "'Gowun Batang', serif",
         "radius": "14px", "shadow": "0 4px 12px rgba(21,128,61,0.08)"
@@ -430,8 +422,7 @@ THEME_STYLES = {
     "🔮 몽환": {
         "title": "🔮 달빛 아래 몽환 다이어리 🌙",
         "bg": "#F5EFFF", "text": "#3C2A4D", "header": "#6B21A8", 
-        "card_bg": "#FFFFFF", "card_border": "#E9D5FF", "default_main": "#9333EA",
-        "secondary_main": "#C084FC",
+        "card_bg": "#FFFFFF", "card_border": "#E9D5FF", "default_main": "#9333EA", "default_sub": "#C084FC",
         "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', cursive",
         "radius": "22px", "shadow": "0 8px 24px rgba(147,51,234,0.15)"
@@ -449,6 +440,8 @@ if "theme" not in st.session_state:
     st.session_state.theme = "👁️‍🗨️ 드림코어"
 if "main_color" not in st.session_state:
     st.session_state.main_color = "#8B5CF6"
+if "sub_color" not in st.session_state:
+    st.session_state.sub_color = "#06B6D4"
 if "invite_code" not in st.session_state:
     st.session_state.invite_code = ""
 if "exchange_id" not in st.session_state:
@@ -461,11 +454,11 @@ if "exchange_start_date" not in st.session_state:
 current_theme_key = st.session_state.theme if st.session_state.theme in THEME_STYLES else "👁️‍🗨️ 드림코어"
 theme_cfg = THEME_STYLES[current_theme_key]
 main_color = st.session_state.main_color if st.session_state.main_color else theme_cfg["default_main"]
-secondary_color = theme_cfg.get("secondary_main", main_color)
+sub_color = st.session_state.sub_color if st.session_state.sub_color else theme_cfg["default_sub"]
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입
+# 동적 CSS 주입 (메인 컬러 & 보조 컬러 조합)
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -494,8 +487,9 @@ if st.session_state.user is not None:
             font-family: {theme_cfg['font_family']} !important;
         }}
         
+        /* 버튼 조화로운 그라데이션 연출 */
         div.stButton > button {{
-            background: linear-gradient(135deg, {main_color} 0%, {secondary_color} 100%) !important;
+            background: linear-gradient(135deg, {main_color} 0%, {sub_color} 100%) !important;
             color: white !important;
             border-radius: {theme_cfg['radius']} !important;
             border: none !important;
@@ -525,7 +519,7 @@ if st.session_state.user is not None:
         </style>
     """, unsafe_allow_html=True)
 
-    # Iframe 내부의 FullCalendar 버튼 및 테마를 직접 덮어씌우는 스크립트
+    # Iframe 내 메인컬러/서브컬러 조합 동적 적용
     components.html(f"""
         <script>
         function injectCalendarStyles() {{
@@ -557,25 +551,27 @@ if st.session_state.user is not None:
                                 color: {theme_cfg['text']} !important;
                                 text-decoration: none !important;
                             }}
-                            .fc-button, .fc-button-primary, button.fc-today-button, button.fc-prev-button, button.fc-next-button {{
+                            /* Today 버튼: 메인 컬러 */
+                            button.fc-today-button {{
                                 background-color: {main_color} !important;
-                                background-image: none !important;
                                 border-color: {main_color} !important;
                                 color: #ffffff !important;
                                 border-radius: {theme_cfg['radius']} !important;
                                 font-weight: bold !important;
-                                opacity: 1 !important;
                             }}
-                            .fc-button:hover, .fc-button-primary:hover, button.fc-today-button:hover, button.fc-prev-button:hover, button.fc-next-button:hover {{
-                                background-color: {secondary_color} !important;
-                                border-color: {secondary_color} !important;
-                                opacity: 0.9 !important;
+                            /* 화살표 버튼: 보조 컬러 (조화로운 멀티 컬러) */
+                            button.fc-prev-button, button.fc-next-button {{
+                                background-color: {sub_color} !important;
+                                border-color: {sub_color} !important;
+                                color: #ffffff !important;
+                                border-radius: {theme_cfg['radius']} !important;
+                                font-weight: bold !important;
                             }}
-                            .fc-button:focus, .fc-button-primary:focus {{
-                                box-shadow: 0 0 0 0.2rem {main_color}66 !important;
+                            .fc-button:hover {{
+                                opacity: 0.85 !important;
                             }}
                             .fc-day-today {{
-                                background-color: {main_color}22 !important;
+                                background-color: {main_color}25 !important;
                             }}
                             .fc-toolbar-title {{
                                 color: {theme_cfg['header']} !important;
@@ -616,13 +612,14 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname, birthdate, theme, m_color, inv_code, e_id, e_type, e_sdate = login_user(username_input, password_input)
+                is_success, nickname, birthdate, theme, m_color, s_color, inv_code, e_id, e_type, e_sdate = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
                     st.session_state.birthdate = birthdate
                     st.session_state.theme = theme
                     st.session_state.main_color = m_color
+                    st.session_state.sub_color = s_color
                     st.session_state.invite_code = inv_code
                     st.session_state.exchange_id = e_id
                     st.session_state.exchange_type = e_type
@@ -659,7 +656,7 @@ if st.session_state.user is None:
                 st.warning("아이디, 비밀번호, 닉네임은 필수 입력사항입니다.")
 
 # =========================================================
-# 4. 메인 서비스 화면 (맞춤 테마 및 메인 컬러 적용)
+# 4. 메인 서비스 화면 (맞춤 테마 및 메인/보조 컬러 적용)
 # =========================================================
 else:
     current_user = st.session_state.user
@@ -711,22 +708,30 @@ else:
             new_bday_str = ""
 
         st.markdown("---")
-        st.markdown("##### 🎨 테마 분위기 변경 (11종)")
+        st.markdown("##### 🎨 테마 분위기 & 조화로운 색상 변경")
         theme_options = list(THEME_STYLES.keys())
         current_theme_idx = theme_options.index(st.session_state.theme) if st.session_state.theme in theme_options else 0
         
         selected_theme = st.selectbox("테마 분위기", theme_options, index=current_theme_idx)
-        suggested_color = THEME_STYLES[selected_theme]["default_main"] if selected_theme != st.session_state.theme else main_color
-        selected_color = st.color_picker("포인트 메인 컬러", value=suggested_color)
+        
+        sug_main = THEME_STYLES[selected_theme]["default_main"] if selected_theme != st.session_state.theme else main_color
+        sug_sub = THEME_STYLES[selected_theme]["default_sub"] if selected_theme != st.session_state.theme else sub_color
+        
+        col_m, col_s = st.columns(2)
+        with col_m:
+            selected_main = st.color_picker("포인트 메인 컬러", value=sug_main)
+        with col_s:
+            selected_sub = st.color_picker("서브 보조 컬러", value=sug_sub)
 
         if st.button("프로필/테마 저장", use_container_width=True):
             cleaned_nick = edit_nick.strip()
             if cleaned_nick:
-                update_user_profile(current_user, cleaned_nick, new_bday_str, selected_theme, selected_color)
+                update_user_profile(current_user, cleaned_nick, new_bday_str, selected_theme, selected_main, selected_sub)
                 st.session_state.nickname = cleaned_nick
                 st.session_state.birthdate = new_bday_str
                 st.session_state.theme = selected_theme
-                st.session_state.main_color = selected_color
+                st.session_state.main_color = selected_main
+                st.session_state.sub_color = selected_sub
                 st.success("정보가 변경되었습니다!")
                 st.rerun()
 
@@ -796,7 +801,7 @@ else:
                     "color": main_color
                 })
 
-        cal_res = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"secret_cal_{st.session_state.theme}_{main_color}")
+        cal_res = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"secret_cal_{st.session_state.theme}_{main_color}_{sub_color}")
 
         clicked_date = None
         if cal_res and "dateClick" in cal_res:
@@ -820,10 +825,10 @@ else:
                 calendar_events.append({
                     "title": f"💌 {d['nickname']}: {d['emotion']}",
                     "start": date_str, "end": date_str, "allDay": True,
-                    "color": secondary_color
+                    "color": sub_color
                 })
 
-        cal_res_e = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"exchange_cal_{st.session_state.theme}_{main_color}")
+        cal_res_e = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"exchange_cal_{st.session_state.theme}_{main_color}_{sub_color}")
 
         clicked_date_e = None
         if cal_res_e and "dateClick" in cal_res_e:
@@ -847,7 +852,7 @@ else:
                 "title": f"🌐 {data['emotion']}", "start": d, "end": d, "allDay": True, "color": main_color
             } for d, data in my_public_diaries.items() if data.get("content")]
 
-            cal_res_p = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"public_cal_{st.session_state.theme}_{main_color}")
+            cal_res_p = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"public_cal_{st.session_state.theme}_{main_color}_{sub_color}")
 
             clicked_date_p = None
             if cal_res_p and "dateClick" in cal_res_p:
