@@ -99,6 +99,7 @@ def init_db():
         )
     ''')
 
+    # 교환일기 테이블 (is_public 컬럼 추가)
     c.execute('''
         CREATE TABLE IF NOT EXISTS exchange_diaries (
             exchange_id TEXT,
@@ -107,6 +108,7 @@ def init_db():
             nickname TEXT,
             emotion TEXT,
             content TEXT,
+            is_public INTEGER DEFAULT 0,
             PRIMARY KEY (exchange_id, date, username)
         )
     ''')
@@ -134,7 +136,8 @@ def init_db():
         ("users", "exchange_id TEXT DEFAULT ''"),
         ("users", "exchange_type TEXT DEFAULT '연인'"),
         ("users", "exchange_start_date TEXT DEFAULT ''"),
-        ("diaries", "is_public INTEGER DEFAULT 0")
+        ("diaries", "is_public INTEGER DEFAULT 0"),
+        ("exchange_diaries", "is_public INTEGER DEFAULT 0")
     ]
     for tbl, col in cols:
         try:
@@ -231,12 +234,17 @@ def get_user_diaries(username, is_public_flag):
 def get_all_public_diaries():
     conn = get_connection()
     c = conn.cursor()
+    # 개인 공개일기와 교환 공개일기 통합 조회
     c.execute('''
         SELECT d.date, d.emotion, d.content, u.nickname, d.username
         FROM diaries d
         JOIN users u ON d.username = u.username
         WHERE d.is_public = 1
-        ORDER BY d.date DESC
+        UNION ALL
+        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username
+        FROM exchange_diaries ed
+        WHERE ed.is_public = 1
+        ORDER BY date DESC
     ''')
     rows = c.fetchall()
     conn.close()
@@ -274,27 +282,27 @@ def delete_diary(username, date_str):
 def get_exchange_diaries(exchange_id):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT date, username, nickname, emotion, content FROM exchange_diaries WHERE exchange_id = ?", (exchange_id,))
+    c.execute("SELECT date, username, nickname, emotion, content, is_public FROM exchange_diaries WHERE exchange_id = ?", (exchange_id,))
     rows = c.fetchall()
     conn.close()
     
     result = {}
     for r in rows:
-        dt, un, nk, em, ct = r[0], r[1], r[2], r[3], r[4]
+        dt, un, nk, em, ct, ip = r[0], r[1], r[2], r[3], r[4], r[5]
         if dt not in result:
             result[dt] = []
-        result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct})
+        result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct, "is_public": ip})
     return result
 
-def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, content):
+def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, content, is_public):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO exchange_diaries (exchange_id, date, username, nickname, emotion, content)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO exchange_diaries (exchange_id, date, username, nickname, emotion, content, is_public)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(exchange_id, date, username) DO UPDATE SET
-            emotion=excluded.emotion, content=excluded.content, nickname=excluded.nickname
-    ''', (exchange_id, date_str, username, nickname, emotion, content))
+            emotion=excluded.emotion, content=excluded.content, nickname=excluded.nickname, is_public=excluded.is_public
+    ''', (exchange_id, date_str, username, nickname, emotion, content, 1 if is_public else 0))
     conn.commit()
     conn.close()
     push_db_to_github(f"Update exchange diary for {date_str}")
@@ -458,7 +466,7 @@ sub_color = st.session_state.sub_color if st.session_state.sub_color else theme_
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입 (메인 컬러 & 보조 컬러 조합)
+# 동적 CSS 주입
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -487,7 +495,6 @@ if st.session_state.user is not None:
             font-family: {theme_cfg['font_family']} !important;
         }}
         
-        /* 버튼 조화로운 그라데이션 연출 */
         div.stButton > button {{
             background: linear-gradient(135deg, {main_color} 0%, {sub_color} 100%) !important;
             color: white !important;
@@ -519,7 +526,6 @@ if st.session_state.user is not None:
         </style>
     """, unsafe_allow_html=True)
 
-    # Iframe 내 메인컬러/서브컬러 조합 동적 적용
     components.html(f"""
         <script>
         function injectCalendarStyles() {{
@@ -551,7 +557,6 @@ if st.session_state.user is not None:
                                 color: {theme_cfg['text']} !important;
                                 text-decoration: none !important;
                             }}
-                            /* Today 버튼: 메인 컬러 */
                             button.fc-today-button {{
                                 background-color: {main_color} !important;
                                 border-color: {main_color} !important;
@@ -559,7 +564,6 @@ if st.session_state.user is not None:
                                 border-radius: {theme_cfg['radius']} !important;
                                 font-weight: bold !important;
                             }}
-                            /* 화살표 버튼: 보조 컬러 (조화로운 멀티 컬러) */
                             button.fc-prev-button, button.fc-next-button {{
                                 background-color: {sub_color} !important;
                                 border-color: {sub_color} !important;
@@ -599,7 +603,7 @@ EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
 
 
 # =========================================================
-# 3. 로그인 / 회원가입 화면 (테마 미적용 기본 깔끔 톤)
+# 3. 로그인 / 회원가입 화면 (기본 미니멀 톤)
 # =========================================================
 if st.session_state.user is None:
     st.title("🧸 소소하고 포근한 일기장")
@@ -656,7 +660,7 @@ if st.session_state.user is None:
                 st.warning("아이디, 비밀번호, 닉네임은 필수 입력사항입니다.")
 
 # =========================================================
-# 4. 메인 서비스 화면 (맞춤 테마 및 메인/보조 컬러 적용)
+# 4. 메인 서비스 화면
 # =========================================================
 else:
     current_user = st.session_state.user
@@ -684,7 +688,8 @@ else:
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    with st.sidebar.expander("✏️ 내 정보 & 교환일기 설정"):
+    # 1. 내 정보 수정 전용 칸 (분리 1)
+    with st.sidebar.expander("✏️ 내 정보 & 테마 수정"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
         has_bday = bool(user_birthdate)
@@ -723,7 +728,7 @@ else:
         with col_s:
             selected_sub = st.color_picker("서브 보조 컬러", value=sug_sub)
 
-        if st.button("프로필/테마 저장", use_container_width=True):
+        if st.button("내 정보/테마 저장", use_container_width=True):
             cleaned_nick = edit_nick.strip()
             if cleaned_nick:
                 update_user_profile(current_user, cleaned_nick, new_bday_str, selected_theme, selected_main, selected_sub)
@@ -732,33 +737,16 @@ else:
                 st.session_state.theme = selected_theme
                 st.session_state.main_color = selected_main
                 st.session_state.sub_color = selected_sub
-                st.success("정보가 변경되었습니다!")
+                st.success("내 정보가 성공적으로 수정되었습니다!")
                 st.rerun()
 
-        st.markdown("---")
-        st.markdown("##### 💌 교환일기 연결하기")
+    # 2. 교환일기 초대코드 확인/연결 전용 칸 (분리 2)
+    with st.sidebar.expander("💌 내 초대코드 & 교환일기 상태"):
         st.info(f"내 초대코드: **{st.session_state.invite_code}**")
-        
-        if not st.session_state.exchange_id:
-            partner_code_input = st.text_input("상대방 초대코드 입력")
-            ex_type_input = st.radio("관계 선택", ["연인", "친구"], horizontal=True)
-            ex_start_input = st.date_input("시작일 선택", value=today_dt, max_value=today_dt)
-            
-            if st.button("교환일기 연결 신청", use_container_width=True):
-                if partner_code_input.strip():
-                    is_ok, msg = connect_exchange_by_code(
-                        current_user, partner_code_input.strip().upper(), ex_type_input, ex_start_input.strftime("%Y-%m-%d")
-                    )
-                    if is_ok:
-                        st.session_state.exchange_id = msg
-                        st.session_state.exchange_type = ex_type_input
-                        st.session_state.exchange_start_date = ex_start_input.strftime("%Y-%m-%d")
-                        st.success("교환일기 연결이 성공했습니다! 🎉")
-                        st.rerun()
-                    else:
-                        st.error(msg)
+        if st.session_state.exchange_id:
+            st.success(f"💌 [{st.session_state.exchange_type}] 교환일기가 연결되어 있습니다.")
         else:
-            st.success(f"💌 [{st.session_state.exchange_type}] 교환일기 연동 중입니다.")
+            st.warning("아직 연결된 교환일기가 없습니다.")
 
     if st.sidebar.button("🔒 로그아웃"):
         st.session_state.user = None
@@ -769,17 +757,19 @@ else:
 
     st.sidebar.markdown("---")
     
-    menu_options = ["🔒 비밀일기", "🌐 공개일기"]
-    if st.session_state.exchange_id:
-        menu_options.insert(1, "💌 교환일기")
-
+    # 교환일기 탭은 메뉴 선택 칸에서 상시 접근 가능
+    menu_options = ["🔒 비밀일기", "💌 교환일기", "🌐 공개일기"]
     nav_choice = st.sidebar.radio("메뉴 선택", menu_options)
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
         st.session_state.page = "secret_calendar"
         st.rerun()
-    elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor"]:
-        st.session_state.page = "exchange_calendar"
+    elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor", "exchange_setup"]:
+        # 교환일기 연결 여부에 따른 진입
+        if st.session_state.exchange_id:
+            st.session_state.page = "exchange_calendar"
+        else:
+            st.session_state.page = "exchange_setup"
         st.rerun()
     elif nav_choice == "🌐 공개일기" and st.session_state.page not in ["public_calendar", "public_editor"]:
         st.session_state.page = "public_calendar"
@@ -814,7 +804,35 @@ else:
             st.session_state.page = "secret_editor"
             st.rerun()
 
-    # PAGE 2: 💌 교환일기 달력
+    # PAGE 2-0: 💌 교환일기 처음 연결 설정 화면
+    elif st.session_state.page == "exchange_setup":
+        st.header("💌 소중한 사람과 교환일기 시작하기")
+        st.write("소중한 친구나 연인의 초대코드를 입력하여 둘만의 교환일기를 시작해보세요!")
+        
+        st.info(f"내 초대코드: **{st.session_state.invite_code}** (상대방에게 전달해 주세요)")
+        
+        partner_code_input = st.text_input("상대방 초대코드 입력")
+        ex_type_input = st.radio("관계 선택", ["연인", "친구"], horizontal=True)
+        ex_start_input = st.date_input("시작일 선택", value=today_dt, max_value=today_dt)
+        
+        if st.button("💌 교환일기 시작하기", use_container_width=True):
+            if partner_code_input.strip():
+                is_ok, msg = connect_exchange_by_code(
+                    current_user, partner_code_input.strip().upper(), ex_type_input, ex_start_input.strftime("%Y-%m-%d")
+                )
+                if is_ok:
+                    st.session_state.exchange_id = msg
+                    st.session_state.exchange_type = ex_type_input
+                    st.session_state.exchange_start_date = ex_start_input.strftime("%Y-%m-%d")
+                    st.success("교환일기가 성공적으로 시작되었습니다! 🎉")
+                    st.session_state.page = "exchange_calendar"
+                    st.rerun()
+                else:
+                    st.error(msg)
+            else:
+                st.warning("상대방의 초대코드를 입력해 주세요.")
+
+    # PAGE 2-1: 💌 교환일기 달력
     elif st.session_state.page == "exchange_calendar":
         st.header(f"💌 우리들의 소중한 교환일기 ({st.session_state.exchange_type})")
         ex_diaries = get_exchange_diaries(st.session_state.exchange_id)
@@ -822,8 +840,9 @@ else:
         calendar_events = []
         for date_str, diary_list in ex_diaries.items():
             for d in diary_list:
+                vis_icon = "🔒" if d.get("is_public", 0) == 0 else "🌐"
                 calendar_events.append({
-                    "title": f"💌 {d['nickname']}: {d['emotion']}",
+                    "title": f"{vis_icon} {d['nickname']}: {d['emotion']}",
                     "start": date_str, "end": date_str, "allDay": True,
                     "color": sub_color
                 })
@@ -930,7 +949,7 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 5: 교환일기 에디터
+    # PAGE 5: 교환일기 에디터 (비밀 / 공개 설정 기능 추가)
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
         eid = st.session_state.exchange_id
@@ -942,6 +961,8 @@ else:
 
         if partner_e_diary:
             st.subheader(f"💌 상대방({partner_e_diary['nickname']})의 일기")
+            p_vis = "🔒 둘만 보기" if partner_e_diary.get("is_public", 0) == 0 else "🌐 모두에게 공개"
+            st.caption(f"공개 여부: {p_vis}")
             st.info(f"{partner_e_diary['emotion']} {partner_e_diary['content']}")
             st.markdown("---")
 
@@ -952,11 +973,21 @@ else:
 
         txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=180)
 
+        # 공개/비밀 선택 라디오
+        curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
+        ex_public_choice = st.radio(
+            "공개범위 선택:",
+            ["🔒 둘만 보기 (비밀 교환일기)", "🌐 모두에게 공개 (공개일기 모아보기 포함)"],
+            index=curr_pub_idx,
+            horizontal=True
+        )
+        is_ex_public = (ex_public_choice == "🌐 모두에게 공개 (공개일기 모아보기 포함)")
+
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button("💌 교환일기 저장", use_container_width=True):
                 if txt.strip():
-                    save_exchange_diary(eid, s_date, current_user, current_nickname, sel_emoji, txt.strip())
+                    save_exchange_diary(eid, s_date, current_user, current_nickname, sel_emoji, txt.strip(), is_ex_public)
                     st.success("교환일기가 저장되었습니다!")
                     st.session_state.page = "exchange_calendar"
                     st.rerun()
