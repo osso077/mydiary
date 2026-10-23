@@ -464,7 +464,7 @@ secondary_color = theme_cfg.get("secondary_main", main_color)
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입 (달력 화살표 및 Today 버튼 완벽 동기화)
+# 동적 CSS 주입 (오늘 날짜 및 달력 버튼 테마 색상 강제 일체화)
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -516,7 +516,7 @@ if st.session_state.user is not None:
         }}
 
         /* -------------------------------------------------- */
-        /* 달력 버튼(Today, 화살표 등) 및 헤더 테마 색상 강제 지정 */
+        /* 달력 버튼(Today, 화살표 등) 및 오늘 날짜 강제 오버라이드 */
         /* -------------------------------------------------- */
         .fc .fc-button, .fc .fc-button-primary, .fc-button-button {{
             background-color: {main_color} !important;
@@ -539,12 +539,16 @@ if st.session_state.user is not None:
             opacity: 0.6 !important;
         }}
 
-        /* 오늘 날짜 영역 강조 */
-        .fc-daygrid-day.fc-day-today {{
-            background-color: rgba(139, 92, 246, 0.15) !important;
+        /* 오늘 날짜 영역 기본 핑크색 제거 후 메인/보조 컬러로 강제 치환 */
+        .fc .fc-daygrid-day.fc-day-today {{
+            background-color: {main_color}22 !important;
+        }}
+        .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {{
+            color: {main_color} !important;
+            font-weight: bold !important;
         }}
 
-        /* 달력 제목 폰트 색상 및 스타일 */
+        /* 달력 제목 폰트 색상 */
         .fc-toolbar-title {{
             color: {theme_cfg['header']} !important;
             font-family: {theme_cfg['font_family']} !important;
