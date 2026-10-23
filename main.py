@@ -79,8 +79,9 @@ def init_db():
             theme TEXT DEFAULT '포근함',
             main_color TEXT DEFAULT '#DDA15E',
             invite_code TEXT UNIQUE,
-            couple_id TEXT DEFAULT '',
-            couple_start_date TEXT DEFAULT ''
+            exchange_id TEXT DEFAULT '',
+            exchange_type TEXT DEFAULT '연인',
+            exchange_start_date TEXT DEFAULT ''
         )
     ''')
     
@@ -96,15 +97,16 @@ def init_db():
         )
     ''')
 
+    # 교환일기 테이블
     c.execute('''
-        CREATE TABLE IF NOT EXISTS couple_diaries (
-            couple_id TEXT,
+        CREATE TABLE IF NOT EXISTS exchange_diaries (
+            exchange_id TEXT,
             date TEXT,
             username TEXT,
             nickname TEXT,
             emotion TEXT,
             content TEXT,
-            PRIMARY KEY (couple_id, date, username)
+            PRIMARY KEY (exchange_id, date, username)
         )
     ''')
 
@@ -127,8 +129,9 @@ def init_db():
         ("users", "theme TEXT DEFAULT '포근함'"),
         ("users", "main_color TEXT DEFAULT '#DDA15E'"),
         ("users", "invite_code TEXT DEFAULT ''"),
-        ("users", "couple_id TEXT DEFAULT ''"),
-        ("users", "couple_start_date TEXT DEFAULT ''"),
+        ("users", "exchange_id TEXT DEFAULT ''"),
+        ("users", "exchange_type TEXT DEFAULT '연인'"),
+        ("users", "exchange_start_date TEXT DEFAULT ''"),
         ("diaries", "is_public INTEGER DEFAULT 0")
     ]
     for tbl, col in cols:
@@ -164,15 +167,15 @@ def register_user(username, password, nickname, birthdate=""):
 def login_user(username, password):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password, nickname, birthdate, theme, main_color, invite_code, couple_id, couple_start_date FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password, nickname, birthdate, theme, main_color, invite_code, exchange_id, exchange_type, exchange_start_date FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
         stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
             inv_code = row[5] if row[5] else generate_invite_code()
-            return True, row[1], row[2], (row[3] or '포근함'), (row[4] or '#DDA15E'), inv_code, row[6], row[7]
-    return False, None, None, '포근함', '#DDA15E', '', '', ''
+            return True, row[1], row[2], (row[3] or '포근함'), (row[4] or '#DDA15E'), inv_code, row[6], row[7], row[8]
+    return False, None, None, '포근함', '#DDA15E', '', '', '연인', ''
 
 def update_user_profile(username, new_nickname, new_birthdate, new_theme, new_main_color):
     conn = get_connection()
@@ -186,7 +189,7 @@ def update_user_profile(username, new_nickname, new_birthdate, new_theme, new_ma
     conn.close()
     push_db_to_github(f"Update profile for user {username}")
 
-def connect_couple_by_code(my_username, partner_code, start_date_str):
+def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str):
     conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT username FROM users WHERE invite_code = ?", (partner_code,))
@@ -201,14 +204,14 @@ def connect_couple_by_code(my_username, partner_code, start_date_str):
         conn.close()
         return False, "자신의 초대코드는 입력할 수 없습니다."
 
-    cid = f"couple_{min(my_username, partner_username)}_{max(my_username, partner_username)}"
+    eid = f"ex_{min(my_username, partner_username)}_{max(my_username, partner_username)}"
     
-    c.execute("UPDATE users SET couple_id = ?, couple_start_date = ? WHERE username IN (?, ?)", 
-              (cid, start_date_str, my_username, partner_username))
+    c.execute("UPDATE users SET exchange_id = ?, exchange_type = ?, exchange_start_date = ? WHERE username IN (?, ?)", 
+              (eid, ex_type, start_date_str, my_username, partner_username))
     conn.commit()
     conn.close()
-    push_db_to_github("Couples connected")
-    return True, cid
+    push_db_to_github("Exchange connected")
+    return True, eid
 
 def get_user_diaries(username, is_public_flag):
     conn = get_connection()
@@ -266,10 +269,10 @@ def delete_diary(username, date_str):
     conn.close()
     push_db_to_github(f"Delete diary entry for {date_str}")
 
-def get_couple_diaries(couple_id):
+def get_exchange_diaries(exchange_id):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT date, username, nickname, emotion, content FROM couple_diaries WHERE couple_id = ?", (couple_id,))
+    c.execute("SELECT date, username, nickname, emotion, content FROM exchange_diaries WHERE exchange_id = ?", (exchange_id,))
     rows = c.fetchall()
     conn.close()
     
@@ -281,18 +284,18 @@ def get_couple_diaries(couple_id):
         result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct})
     return result
 
-def save_couple_diary(couple_id, date_str, username, nickname, emotion, content):
+def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, content):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO couple_diaries (couple_id, date, username, nickname, emotion, content)
+        INSERT INTO exchange_diaries (exchange_id, date, username, nickname, emotion, content)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(couple_id, date, username) DO UPDATE SET
+        ON CONFLICT(exchange_id, date, username) DO UPDATE SET
             emotion=excluded.emotion, content=excluded.content, nickname=excluded.nickname
-    ''', (couple_id, date_str, username, nickname, emotion, content))
+    ''', (exchange_id, date_str, username, nickname, emotion, content))
     conn.commit()
     conn.close()
-    push_db_to_github(f"Update couple diary for {date_str}")
+    push_db_to_github(f"Update exchange diary for {date_str}")
 
 def add_comment(diary_username, diary_date, comment_username, comment_nickname, content):
     conn = get_connection()
@@ -329,23 +332,25 @@ def delete_comment(comment_id):
 
 
 # =========================================================
-# 2. UI 및 리얼 드림코어(Dreamcore) 연출 포함 테마 (11종)
+# 2. UI 및 테마 설정 (11종)
 # =========================================================
-st.set_page_config(page_title="소소한 일기장", page_icon="👁️‍🗨️", layout="centered")
+st.set_page_config(page_title="소소한 일기장", page_icon="🧸", layout="centered")
 
 THEME_STYLES = {
     "👁️‍🗨️ 드림코어": {
         "title": "👁️‍🗨️ Have you been here before? ☁️",
         "bg": "#120E1A", "text": "#D4C7E7", "header": "#A882DD", 
         "card_bg": "#1D162B", "card_border": "#6B4899", "default_main": "#8B5CF6",
+        "secondary_main": "#06B6D4", # 드림코어 전용 멀티 메인 컬러 (퍼플 + 시안)
         "font_import": "https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', 'Cinzel Decorative', cursive",
-        "radius": "28px", "shadow": "0 0 20px rgba(139, 92, 246, 0.4), inset 0 0 10px rgba(168, 130, 221, 0.2)"
+        "radius": "28px", "shadow": "0 0 20px rgba(139, 92, 246, 0.4), inset 0 0 10px rgba(6, 182, 212, 0.2)"
     },
     "포근함": {
         "title": "🧸 소소하고 포근한 일기장",
         "bg": "#FAF6F0", "text": "#4A3E3D", "header": "#6C5B52", 
         "card_bg": "#FFFFFF", "card_border": "#E3D5CA", "default_main": "#DDA15E",
+        "secondary_main": "#BC6C25",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
         "radius": "16px", "shadow": "0 4px 12px rgba(0,0,0,0.05)"
@@ -354,6 +359,7 @@ THEME_STYLES = {
         "title": "👑 공주님의 비밀 다이어리 🎀",
         "bg": "#FFF0F5", "text": "#5C3D46", "header": "#D81B60", 
         "card_bg": "#FFFFFF", "card_border": "#FFB6C1", "default_main": "#FF69B4",
+        "secondary_main": "#FF1493",
         "font_import": "https://fonts.googleapis.com/css2?family=Single+Day&display=swap",
         "font_family": "'Single Day', cursive",
         "radius": "24px", "shadow": "0 8px 20px rgba(255,105,180,0.15)"
@@ -362,6 +368,7 @@ THEME_STYLES = {
         "title": "🐣 병아리의 자그마한 일기장 🐥",
         "bg": "#FFFBEA", "text": "#4A4438", "header": "#D97706", 
         "card_bg": "#FFFFFF", "card_border": "#FFE599", "default_main": "#FFB000",
+        "secondary_main": "#F59E0B",
         "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', cursive",
         "radius": "20px", "shadow": "0 6px 14px rgba(255,176,0,0.15)"
@@ -370,6 +377,7 @@ THEME_STYLES = {
         "title": "MINIMAL DIARY",
         "bg": "#F8F9FA", "text": "#212529", "header": "#1A1D20", 
         "card_bg": "#FFFFFF", "card_border": "#DEE2E6", "default_main": "#343A40",
+        "secondary_main": "#495057",
         "font_import": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500&display=swap",
         "font_family": "'Noto Sans KR', sans-serif",
         "radius": "4px", "shadow": "none"
@@ -378,6 +386,7 @@ THEME_STYLES = {
         "title": "📖 서재 속 양장본 일기장",
         "bg": "#F4F1EA", "text": "#2C2C2C", "header": "#3D312A", 
         "card_bg": "#FCFBF7", "card_border": "#D2C7B8", "default_main": "#8C6D53",
+        "secondary_main": "#654321",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap",
         "font_family": "'Gowun Batang', serif",
         "radius": "8px", "shadow": "0 2px 8px rgba(61,49,42,0.08)"
@@ -386,6 +395,7 @@ THEME_STYLES = {
         "title": "🌙 한밤중의 비밀 기록",
         "bg": "#121216", "text": "#E2E8F0", "header": "#BB86FC", 
         "card_bg": "#1E1E24", "card_border": "#2D2D38", "default_main": "#BB86FC",
+        "secondary_main": "#03DAC6",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
         "radius": "12px", "shadow": "0 4px 16px rgba(0,0,0,0.4)"
@@ -394,6 +404,7 @@ THEME_STYLES = {
         "title": "📟 Y2K 감성 다이어리 👾",
         "bg": "#E0F7FA", "text": "#004D40", "header": "#00838F", 
         "card_bg": "#FFFFFF", "card_border": "#80DEEA", "default_main": "#00ACC1",
+        "secondary_main": "#FF5722",
         "font_import": "https://fonts.googleapis.com/css2?family=DungGeunMo&display=swap",
         "font_family": "'DungGeunMo', monospace",
         "radius": "0px", "shadow": "4px 4px 0px #004D40"
@@ -402,6 +413,7 @@ THEME_STYLES = {
         "title": "🌊 푸른 바다 속 이야기 🐬",
         "bg": "#EBF4F6", "text": "#1E3E62", "header": "#0B2F9F", 
         "card_bg": "#FFFFFF", "card_border": "#B0C4DE", "default_main": "#0284C7",
+        "secondary_main": "#0369A1",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
         "radius": "18px", "shadow": "0 8px 16px rgba(2,132,199,0.12)"
@@ -410,6 +422,7 @@ THEME_STYLES = {
         "title": "🍃 울창한 숲속 비밀노트 🌲",
         "bg": "#F1F8F5", "text": "#1C352D", "header": "#2D5A27", 
         "card_bg": "#FFFFFF", "card_border": "#C2E0D2", "default_main": "#15803D",
+        "secondary_main": "#166534",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap",
         "font_family": "'Gowun Batang', serif",
         "radius": "14px", "shadow": "0 4px 12px rgba(21,128,61,0.08)"
@@ -418,6 +431,7 @@ THEME_STYLES = {
         "title": "🔮 달빛 아래 몽환 다이어리 🌙",
         "bg": "#F5EFFF", "text": "#3C2A4D", "header": "#6B21A8", 
         "card_bg": "#FFFFFF", "card_border": "#E9D5FF", "default_main": "#9333EA",
+        "secondary_main": "#C084FC",
         "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', cursive",
         "radius": "22px", "shadow": "0 8px 24px rgba(147,51,234,0.15)"
@@ -437,70 +451,90 @@ if "main_color" not in st.session_state:
     st.session_state.main_color = "#8B5CF6"
 if "invite_code" not in st.session_state:
     st.session_state.invite_code = ""
-if "couple_id" not in st.session_state:
-    st.session_state.couple_id = ""
-if "couple_start_date" not in st.session_state:
-    st.session_state.couple_start_date = ""
+if "exchange_id" not in st.session_state:
+    st.session_state.exchange_id = ""
+if "exchange_type" not in st.session_state:
+    st.session_state.exchange_type = "연인"
+if "exchange_start_date" not in st.session_state:
+    st.session_state.exchange_start_date = ""
 
 current_theme_key = st.session_state.theme if st.session_state.theme in THEME_STYLES else "👁️‍🗨️ 드림코어"
 theme_cfg = THEME_STYLES[current_theme_key]
 main_color = st.session_state.main_color if st.session_state.main_color else theme_cfg["default_main"]
+secondary_color = theme_cfg.get("secondary_main", main_color)
 app_title = theme_cfg["title"]
 
-# 동적 CSS 주입
-st.markdown(f"""
-    <style>
-    @import url('{theme_cfg['font_import']}');
+# ---------------------------------------------------------
+# 동적 CSS 주입 (로그인 후 적용)
+# ---------------------------------------------------------
+if st.session_state.user is not None:
+    st.markdown(f"""
+        <style>
+        @import url('{theme_cfg['font_import']}');
 
-    html, body, .stApp {{
-        background-color: {theme_cfg['bg']};
-        color: {theme_cfg['text']};
-        font-family: {theme_cfg['font_family']} !important;
-    }}
-    
-    h1, h2, h3, h4 {{
-        color: {theme_cfg['header']} !important;
-        font-family: {theme_cfg['font_family']} !important;
-        font-weight: bold;
-        letter-spacing: 1px;
-    }}
-    
-    .stTextArea textarea, .stTextInput input, div[data-testid="stForm"] {{
-        background-color: {theme_cfg['card_bg']} !important;
-        border: 1px solid {theme_cfg['card_border']} !important;
-        border-radius: {theme_cfg['radius']} !important;
-        color: {theme_cfg['text']} !important;
-        box-shadow: {theme_cfg['shadow']} !important;
-        font-family: {theme_cfg['font_family']} !important;
-    }}
-    
-    div.stButton > button {{
-        background-color: {main_color} !important;
-        color: white !important;
-        border-radius: {theme_cfg['radius']} !important;
-        border: none !important;
-        padding: 10px 24px !important;
-        font-weight: bold !important;
-        box-shadow: {theme_cfg['shadow']} !important;
-        font-family: {theme_cfg['font_family']} !important;
-        transition: all 0.25s ease-in-out;
-    }}
-    
-    div.stButton > button:hover {{
-        opacity: 0.9;
-        transform: translateY(-3px) scale(1.02);
-    }}
-    
-    section[data-testid="stSidebar"] {{
-        background-color: {theme_cfg['card_bg']} !important;
-        border-right: 1px solid {theme_cfg['card_border']} !important;
-    }}
+        html, body, .stApp {{
+            background-color: {theme_cfg['bg']};
+            color: {theme_cfg['text']};
+            font-family: {theme_cfg['font_family']} !important;
+        }}
+        
+        h1, h2, h3, h4 {{
+            color: {theme_cfg['header']} !important;
+            font-family: {theme_cfg['font_family']} !important;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }}
+        
+        .stTextArea textarea, .stTextInput input, div[data-testid="stForm"] {{
+            background-color: {theme_cfg['card_bg']} !important;
+            border: 1px solid {theme_cfg['card_border']} !important;
+            border-radius: {theme_cfg['radius']} !important;
+            color: {theme_cfg['text']} !important;
+            box-shadow: {theme_cfg['shadow']} !important;
+            font-family: {theme_cfg['font_family']} !important;
+        }}
+        
+        /* 버튼 및 강조 아이콘 멀티 컬러 적용 (드림코어 등) */
+        div.stButton > button {{
+            background: linear-gradient(135deg, {main_color} 0%, {secondary_color} 100%) !important;
+            color: white !important;
+            border-radius: {theme_cfg['radius']} !important;
+            border: none !important;
+            padding: 10px 24px !important;
+            font-weight: bold !important;
+            box-shadow: {theme_cfg['shadow']} !important;
+            font-family: {theme_cfg['font_family']} !important;
+            transition: all 0.25s ease-in-out;
+        }}
+        
+        div.stButton > button:hover {{
+            opacity: 0.9;
+            transform: translateY(-3px) scale(1.02);
+        }}
+        
+        section[data-testid="stSidebar"] {{
+            background-color: {theme_cfg['card_bg']} !important;
+            border-right: 1px solid {theme_cfg['card_border']} !important;
+        }}
 
-    iframe[title="streamlit_calendar.calendar"] {{
-        min-height: 580px !important;
-    }}
-    </style>
-""", unsafe_allow_html=True)
+        /* 캘린더 내부 화살표, 오늘(Today) 버튼, 선택 영역 메인컬러 일체화 */
+        .fc .fc-button-primary {{
+            background-color: {main_color} !important;
+            border-color: {main_color} !important;
+        }}
+        .fc .fc-button-primary:hover {{
+            background-color: {secondary_color} !important;
+            border-color: {secondary_color} !important;
+        }}
+        .fc-daygrid-day.fc-day-today {{
+            background-color: rgba(139, 92, 246, 0.1) !important;
+        }}
+
+        iframe[title="streamlit_calendar.calendar"] {{
+            min-height: 580px !important;
+        }}
+        </style>
+    """, unsafe_allow_html=True)
 
 today_dt = datetime.date.today()
 today_str = today_dt.strftime("%Y-%m-%d")
@@ -515,10 +549,10 @@ EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
 
 
 # =========================================================
-# 3. 로그인 / 회원가입 화면
+# 3. 로그인 / 회원가입 화면 (테마 미적용 기본 깔끔 톤)
 # =========================================================
 if st.session_state.user is None:
-    st.title(app_title)
+    st.title("🧸 소소하고 포근한 일기장")
     
     auth_mode = st.radio("서비스 이용을 위해 로그인해 주세요.", ["로그인", "회원가입"], horizontal=True)
     
@@ -528,7 +562,7 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname, birthdate, theme, m_color, inv_code, c_id, c_sdate = login_user(username_input, password_input)
+                is_success, nickname, birthdate, theme, m_color, inv_code, e_id, e_type, e_sdate = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
@@ -536,8 +570,9 @@ if st.session_state.user is None:
                     st.session_state.theme = theme
                     st.session_state.main_color = m_color
                     st.session_state.invite_code = inv_code
-                    st.session_state.couple_id = c_id
-                    st.session_state.couple_start_date = c_sdate
+                    st.session_state.exchange_id = e_id
+                    st.session_state.exchange_type = e_type
+                    st.session_state.exchange_start_date = e_sdate
                     st.session_state.page = "secret_calendar"
                     st.success(f"{st.session_state.nickname}님 환영합니다!")
                     st.rerun()
@@ -570,7 +605,7 @@ if st.session_state.user is None:
                 st.warning("아이디, 비밀번호, 닉네임은 필수 입력사항입니다.")
 
 # =========================================================
-# 4. 메인 서비스 화면
+# 4. 메인 서비스 화면 (맞춤 테마 적용)
 # =========================================================
 else:
     current_user = st.session_state.user
@@ -585,17 +620,20 @@ else:
     st.sidebar.title(app_title.split()[0] + " 일기장")
     st.sidebar.write(f"👤 **{current_nickname}** 님")
     
-    if st.session_state.couple_id and st.session_state.couple_start_date:
+    # 교환일기 D-Day 표시 (친구/연인 구분)
+    if st.session_state.exchange_id and st.session_state.exchange_start_date:
         try:
-            s_dt = datetime.datetime.strptime(st.session_state.couple_start_date, "%Y-%m-%d").date()
+            s_dt = datetime.datetime.strptime(st.session_state.exchange_start_date, "%Y-%m-%d").date()
             d_day = (today_dt - s_dt).days + 1
-            st.sidebar.success(f"👩‍❤️‍👨 사랑한 지 **{d_day}일**째 💕")
+            label = "함께한 지" if st.session_state.exchange_type == "연인" else "교환일기 시작"
+            icon = "👩‍❤️‍👨" if st.session_state.exchange_type == "연인" else "🤝"
+            st.sidebar.success(f"{icon} {label} **{d_day}일**째 ✨")
         except ValueError:
             pass
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    with st.sidebar.expander("✏️ 내 정보 & 커플 설정"):
+    with st.sidebar.expander("✏️ 내 정보 & 교환일기 설정"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
         has_bday = bool(user_birthdate)
@@ -639,47 +677,50 @@ else:
                 st.rerun()
 
         st.markdown("---")
-        st.markdown("##### 👩‍❤️‍👨 커플 연결하기")
+        st.markdown("##### 💌 교환일기 연결하기")
         st.info(f"내 초대코드: **{st.session_state.invite_code}**")
         
-        if not st.session_state.couple_id:
+        if not st.session_state.exchange_id:
             partner_code_input = st.text_input("상대방 초대코드 입력")
-            couple_start_input = st.date_input("연애 시작일", value=today_dt, max_value=today_dt)
+            ex_type_input = st.radio("관계 선택", ["연인", "친구"], horizontal=True)
+            ex_start_input = st.date_input("시작일 선택", value=today_dt, max_value=today_dt)
             
-            if st.button("커플 연결 신청", use_container_width=True):
+            if st.button("교환일기 연결 신청", use_container_width=True):
                 if partner_code_input.strip():
-                    is_ok, msg = connect_couple_by_code(
-                        current_user, partner_code_input.strip().upper(), couple_start_input.strftime("%Y-%m-%d")
+                    is_ok, msg = connect_exchange_by_code(
+                        current_user, partner_code_input.strip().upper(), ex_type_input, ex_start_input.strftime("%Y-%m-%d")
                     )
                     if is_ok:
-                        st.session_state.couple_id = msg
-                        st.session_state.couple_start_date = couple_start_input.strftime("%Y-%m-%d")
-                        st.success("커플 연결이 성공했습니다! 🎉")
+                        st.session_state.exchange_id = msg
+                        st.session_state.exchange_type = ex_type_input
+                        st.session_state.exchange_start_date = ex_start_input.strftime("%Y-%m-%d")
+                        st.success("교환일기 연결이 성공했습니다! 🎉")
                         st.rerun()
                     else:
                         st.error(msg)
         else:
-            st.success("❤️ 커플 연동 중입니다.")
+            st.success(f"💌 [{st.session_state.exchange_type}] 교환일기 연동 중입니다.")
 
     if st.sidebar.button("🔒 로그아웃"):
         st.session_state.user = None
         st.session_state.nickname = None
+        st.session_state.exchange_id = ""
         st.session_state.page = "secret_calendar"
         st.rerun()
 
     st.sidebar.markdown("---")
     
     menu_options = ["🔒 비밀일기", "🌐 공개일기"]
-    if st.session_state.couple_id:
-        menu_options.insert(1, "👩‍❤️‍👨 커플일기")
+    if st.session_state.exchange_id:
+        menu_options.insert(1, "💌 교환일기")
 
     nav_choice = st.sidebar.radio("메뉴 선택", menu_options)
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
         st.session_state.page = "secret_calendar"
         st.rerun()
-    elif nav_choice == "👩‍❤️‍👨 커플일기" and st.session_state.page not in ["couple_calendar", "couple_editor"]:
-        st.session_state.page = "couple_calendar"
+    elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor"]:
+        st.session_state.page = "exchange_calendar"
         st.rerun()
     elif nav_choice == "🌐 공개일기" and st.session_state.page not in ["public_calendar", "public_editor"]:
         st.session_state.page = "public_calendar"
@@ -714,31 +755,31 @@ else:
             st.session_state.page = "secret_editor"
             st.rerun()
 
-    # PAGE 2: 👩‍❤️‍👨 커플일기 달력
-    elif st.session_state.page == "couple_calendar":
-        st.header("👩‍❤️‍👨 우리둘만의 커플일기")
-        couple_diaries = get_couple_diaries(st.session_state.couple_id)
+    # PAGE 2: 💌 교환일기 달력
+    elif st.session_state.page == "exchange_calendar":
+        st.header(f"💌 우리들의 소중한 교환일기 ({st.session_state.exchange_type})")
+        ex_diaries = get_exchange_diaries(st.session_state.exchange_id)
 
         calendar_events = []
-        for date_str, diary_list in couple_diaries.items():
+        for date_str, diary_list in ex_diaries.items():
             for d in diary_list:
                 calendar_events.append({
-                    "title": f"💕 {d['nickname']}: {d['emotion']}",
+                    "title": f"💌 {d['nickname']}: {d['emotion']}",
                     "start": date_str, "end": date_str, "allDay": True,
-                    "color": "#FF6B6B"
+                    "color": secondary_color
                 })
 
-        cal_res_c = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"couple_cal_{st.session_state.theme}_{main_color}")
+        cal_res_e = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"exchange_cal_{st.session_state.theme}_{main_color}")
 
-        clicked_date_c = None
-        if cal_res_c and "dateClick" in cal_res_c:
-            clicked_date_c = cal_res_c["dateClick"]["date"].split("T")[0]
-        elif cal_res_c and "select" in cal_res_c:
-            clicked_date_c = cal_res_c["select"]["start"].split("T")[0]
+        clicked_date_e = None
+        if cal_res_e and "dateClick" in cal_res_e:
+            clicked_date_e = cal_res_e["dateClick"]["date"].split("T")[0]
+        elif cal_res_e and "select" in cal_res_e:
+            clicked_date_e = cal_res_e["select"]["start"].split("T")[0]
 
-        if clicked_date_c:
-            st.session_state.selected_date = clicked_date_c
-            st.session_state.page = "couple_editor"
+        if clicked_date_e:
+            st.session_state.selected_date = clicked_date_e
+            st.session_state.page = "exchange_editor"
             st.rerun()
 
     # PAGE 3: 🌐 공개일기 달력 / 모아보기
@@ -830,37 +871,37 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 5: 커플일기 에디터
-    elif st.session_state.page == "couple_editor":
+    # PAGE 5: 교환일기 에디터
+    elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
-        cid = st.session_state.couple_id
-        st.header(f"👩‍❤️‍👨 커플일기 작성 ({s_date})")
+        eid = st.session_state.exchange_id
+        st.header(f"💌 교환일기 작성 ({s_date})")
 
-        c_diaries = get_couple_diaries(cid).get(s_date, [])
-        my_c_diary = next((d for d in c_diaries if d['username'] == current_user), None)
-        partner_c_diary = next((d for d in c_diaries if d['username'] != current_user), None)
+        e_diaries = get_exchange_diaries(eid).get(s_date, [])
+        my_e_diary = next((d for d in e_diaries if d['username'] == current_user), None)
+        partner_e_diary = next((d for d in e_diaries if d['username'] != current_user), None)
 
-        if partner_c_diary:
-            st.subheader(f"💕 연인({partner_c_diary['nickname']})의 일기")
-            st.info(f"{partner_c_diary['emotion']} {partner_c_diary['content']}")
+        if partner_e_diary:
+            st.subheader(f"💌 상대방({partner_e_diary['nickname']})의 일기")
+            st.info(f"{partner_e_diary['emotion']} {partner_e_diary['content']}")
             st.markdown("---")
 
-        st.subheader("내 커플일기 쓰기")
-        idx = EMOJI_LIST.index(my_c_diary['emotion']) if my_c_diary and my_c_diary['emotion'] in EMOJI_LIST else 0
-        sel_emo = st.radio("오늘 연인에게 전할 감정:", STANDARD_EMOTIONS, index=idx, horizontal=True)
+        st.subheader("내 교환일기 쓰기")
+        idx = EMOJI_LIST.index(my_e_diary['emotion']) if my_e_diary and my_e_diary['emotion'] in EMOJI_LIST else 0
+        sel_emo = st.radio("오늘 상대방에게 전할 감정:", STANDARD_EMOTIONS, index=idx, horizontal=True)
         sel_emoji = sel_emo.split()[0]
 
-        txt = st.text_area("연인과 공유할 일기 내용:", value=my_c_diary['content'] if my_c_diary else "", height=180)
+        txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=180)
 
         col1, col2 = st.columns([1, 1])
         with col1:
-            if st.button("💖 커플일기 저장", use_container_width=True):
+            if st.button("💌 교환일기 저장", use_container_width=True):
                 if txt.strip():
-                    save_couple_diary(cid, s_date, current_user, current_nickname, sel_emoji, txt.strip())
-                    st.success("커플일기가 저장되었습니다!")
-                    st.session_state.page = "couple_calendar"
+                    save_exchange_diary(eid, s_date, current_user, current_nickname, sel_emoji, txt.strip())
+                    st.success("교환일기가 저장되었습니다!")
+                    st.session_state.page = "exchange_calendar"
                     st.rerun()
         with col2:
-            if st.button("🗓️ 커플 달력으로 돌아가기", use_container_width=True):
-                st.session_state.page = "couple_calendar"
+            if st.button("🗓️ 교환 달력으로 돌아가기", use_container_width=True):
+                st.session_state.page = "exchange_calendar"
                 st.rerun()
