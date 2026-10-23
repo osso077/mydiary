@@ -99,7 +99,6 @@ def init_db():
         )
     ''')
 
-    # 교환일기 테이블 (is_public 컬럼 추가)
     c.execute('''
         CREATE TABLE IF NOT EXISTS exchange_diaries (
             exchange_id TEXT,
@@ -182,17 +181,29 @@ def login_user(username, password):
             return True, row[1], row[2], (row[3] or '포근함'), (row[4] or '#DDA15E'), (row[5] or '#BC6C25'), inv_code, row[7], row[8], row[9]
     return False, None, None, '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
 
-def update_user_profile(username, new_nickname, new_birthdate, new_theme, new_main_color, new_sub_color):
+def update_user_info(username, new_nickname, new_birthdate):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
         UPDATE users 
-        SET nickname = ?, birthdate = ?, theme = ?, main_color = ?, sub_color = ? 
+        SET nickname = ?, birthdate = ? 
         WHERE username = ?
-    ''', (new_nickname, new_birthdate, new_theme, new_main_color, new_sub_color, username))
+    ''', (new_nickname, new_birthdate, username))
     conn.commit()
     conn.close()
-    push_db_to_github(f"Update profile for user {username}")
+    push_db_to_github(f"Update info for user {username}")
+
+def update_user_theme(username, new_theme, new_main_color, new_sub_color):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE users 
+        SET theme = ?, main_color = ?, sub_color = ? 
+        WHERE username = ?
+    ''', (new_theme, new_main_color, new_sub_color, username))
+    conn.commit()
+    conn.close()
+    push_db_to_github(f"Update theme for user {username}")
 
 def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str):
     conn = get_connection()
@@ -234,7 +245,6 @@ def get_user_diaries(username, is_public_flag):
 def get_all_public_diaries():
     conn = get_connection()
     c = conn.cursor()
-    # 개인 공개일기와 교환 공개일기 통합 조회
     c.execute('''
         SELECT d.date, d.emotion, d.content, u.nickname, d.username
         FROM diaries d
@@ -603,7 +613,7 @@ EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
 
 
 # =========================================================
-# 3. 로그인 / 회원가입 화면 (기본 미니멀 톤)
+# 3. 로그인 / 회원가입 화면
 # =========================================================
 if st.session_state.user is None:
     st.title("🧸 소소하고 포근한 일기장")
@@ -688,8 +698,8 @@ else:
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 1. 내 정보 수정 전용 칸 (분리 1)
-    with st.sidebar.expander("✏️ 내 정보 & 테마 수정"):
+    # 1. 내 정보 프로필 관리 전용 (완전 분리)
+    with st.sidebar.expander("✏️ 내 정보 관리 (프로필)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
         has_bday = bool(user_birthdate)
@@ -712,12 +722,21 @@ else:
         else:
             new_bday_str = ""
 
-        st.markdown("---")
-        st.markdown("##### 🎨 테마 분위기 & 조화로운 색상 변경")
+        if st.button("프로필 변경 저장", use_container_width=True):
+            cleaned_nick = edit_nick.strip()
+            if cleaned_nick:
+                update_user_info(current_user, cleaned_nick, new_bday_str)
+                st.session_state.nickname = cleaned_nick
+                st.session_state.birthdate = new_bday_str
+                st.success("프로필 정보가 수정되었습니다!")
+                st.rerun()
+
+    # 2. 테마 및 색상 설정 전용 (완전 분리)
+    with st.sidebar.expander("🎨 테마 & 색상 설정"):
         theme_options = list(THEME_STYLES.keys())
         current_theme_idx = theme_options.index(st.session_state.theme) if st.session_state.theme in theme_options else 0
         
-        selected_theme = st.selectbox("테마 분위기", theme_options, index=current_theme_idx)
+        selected_theme = st.selectbox("테마 분위기 (11종)", theme_options, index=current_theme_idx)
         
         sug_main = THEME_STYLES[selected_theme]["default_main"] if selected_theme != st.session_state.theme else main_color
         sug_sub = THEME_STYLES[selected_theme]["default_sub"] if selected_theme != st.session_state.theme else sub_color
@@ -728,19 +747,15 @@ else:
         with col_s:
             selected_sub = st.color_picker("서브 보조 컬러", value=sug_sub)
 
-        if st.button("내 정보/테마 저장", use_container_width=True):
-            cleaned_nick = edit_nick.strip()
-            if cleaned_nick:
-                update_user_profile(current_user, cleaned_nick, new_bday_str, selected_theme, selected_main, selected_sub)
-                st.session_state.nickname = cleaned_nick
-                st.session_state.birthdate = new_bday_str
-                st.session_state.theme = selected_theme
-                st.session_state.main_color = selected_main
-                st.session_state.sub_color = selected_sub
-                st.success("내 정보가 성공적으로 수정되었습니다!")
-                st.rerun()
+        if st.button("테마/색상 적용", use_container_width=True):
+            update_user_theme(current_user, selected_theme, selected_main, selected_sub)
+            st.session_state.theme = selected_theme
+            st.session_state.main_color = selected_main
+            st.session_state.sub_color = selected_sub
+            st.success("테마와 색상이 적용되었습니다!")
+            st.rerun()
 
-    # 2. 교환일기 초대코드 확인/연결 전용 칸 (분리 2)
+    # 3. 교환일기 상태 전용
     with st.sidebar.expander("💌 내 초대코드 & 교환일기 상태"):
         st.info(f"내 초대코드: **{st.session_state.invite_code}**")
         if st.session_state.exchange_id:
@@ -757,7 +772,6 @@ else:
 
     st.sidebar.markdown("---")
     
-    # 교환일기 탭은 메뉴 선택 칸에서 상시 접근 가능
     menu_options = ["🔒 비밀일기", "💌 교환일기", "🌐 공개일기"]
     nav_choice = st.sidebar.radio("메뉴 선택", menu_options)
 
@@ -765,7 +779,6 @@ else:
         st.session_state.page = "secret_calendar"
         st.rerun()
     elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor", "exchange_setup"]:
-        # 교환일기 연결 여부에 따른 진입
         if st.session_state.exchange_id:
             st.session_state.page = "exchange_calendar"
         else:
@@ -804,7 +817,7 @@ else:
             st.session_state.page = "secret_editor"
             st.rerun()
 
-    # PAGE 2-0: 💌 교환일기 처음 연결 설정 화면
+    # PAGE 2-0: 💌 교환일기 연결 설정
     elif st.session_state.page == "exchange_setup":
         st.header("💌 소중한 사람과 교환일기 시작하기")
         st.write("소중한 친구나 연인의 초대코드를 입력하여 둘만의 교환일기를 시작해보세요!")
@@ -949,7 +962,7 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 5: 교환일기 에디터 (비밀 / 공개 설정 기능 추가)
+    # PAGE 5: 교환일기 에디터
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
         eid = st.session_state.exchange_id
@@ -973,7 +986,6 @@ else:
 
         txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=180)
 
-        # 공개/비밀 선택 라디오
         curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
         ex_public_choice = st.radio(
             "공개범위 선택:",
