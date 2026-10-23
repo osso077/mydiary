@@ -5,6 +5,7 @@ import os
 import random
 import string
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_calendar import calendar
 from github import Github, GithubException
 
@@ -464,7 +465,7 @@ secondary_color = theme_cfg.get("secondary_main", main_color)
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입 (오늘 날짜 및 달력 버튼 테마 색상 강제 일체화)
+# 동적 CSS 주입
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -515,51 +516,79 @@ if st.session_state.user is not None:
             border-right: 1px solid {theme_cfg['card_border']} !important;
         }}
 
-        /* -------------------------------------------------- */
-        /* 달력 버튼(Today, 화살표 등) 및 오늘 날짜 강제 오버라이드 */
-        /* -------------------------------------------------- */
-        .fc .fc-button, .fc .fc-button-primary, .fc-button-button {{
-            background-color: {main_color} !important;
-            border-color: {main_color} !important;
-            color: white !important;
-            box-shadow: none !important;
-            border-radius: 8px !important;
-            font-weight: bold !important;
-        }}
-        
-        .fc .fc-button:hover, .fc .fc-button-primary:hover {{
-            background-color: {secondary_color} !important;
-            border-color: {secondary_color} !important;
-            opacity: 0.9 !important;
-        }}
-
-        .fc .fc-button-primary:disabled {{
-            background-color: {main_color} !important;
-            border-color: {main_color} !important;
-            opacity: 0.6 !important;
-        }}
-
-        /* 오늘 날짜 영역 기본 핑크색 제거 후 메인/보조 컬러로 강제 치환 */
-        .fc .fc-daygrid-day.fc-day-today {{
-            background-color: {main_color}22 !important;
-        }}
-        .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {{
-            color: {main_color} !important;
-            font-weight: bold !important;
-        }}
-
-        /* 달력 제목 폰트 색상 */
-        .fc-toolbar-title {{
-            color: {theme_cfg['header']} !important;
-            font-family: {theme_cfg['font_family']} !important;
-            font-weight: bold !important;
-        }}
-
         iframe[title="streamlit_calendar.calendar"] {{
             min-height: 580px !important;
+            border-radius: {theme_cfg['radius']} !important;
+            border: 1px solid {theme_cfg['card_border']} !important;
+            box-shadow: {theme_cfg['shadow']} !important;
         }}
         </style>
     """, unsafe_allow_html=True)
+
+    # Iframe 내부의 FullCalendar 버튼 및 테마를 직접 덮어씌우는 스크립트
+    components.html(f"""
+        <script>
+        function injectCalendarStyles() {{
+            const iframes = parent.document.querySelectorAll('iframe[title="streamlit_calendar.calendar"]');
+            iframes.forEach(iframe => {{
+                try {{
+                    const doc = iframe.contentDocument || iframe.contentWindow.document;
+                    if (doc) {{
+                        let styleTag = doc.getElementById("custom-cal-style");
+                        if (!styleTag) {{
+                            styleTag = doc.createElement("style");
+                            styleTag.id = "custom-cal-style";
+                            doc.head.appendChild(styleTag);
+                        }}
+                        styleTag.innerHTML = `
+                            body {{
+                                background-color: {theme_cfg['card_bg']} !important;
+                                font-family: {theme_cfg['font_family']} !important;
+                                color: {theme_cfg['text']} !important;
+                            }}
+                            .fc {{
+                                background-color: {theme_cfg['card_bg']} !important;
+                                border-radius: {theme_cfg['radius']} !important;
+                            }}
+                            .fc-theme-standard td, .fc-theme-standard th, .fc-theme-standard .fc-scrollgrid {{
+                                border-color: {theme_cfg['card_border']} !important;
+                            }}
+                            .fc-col-header-cell-cushion, .fc-daygrid-day-number {{
+                                color: {theme_cfg['text']} !important;
+                                text-decoration: none !important;
+                            }}
+                            .fc-button, .fc-button-primary, button.fc-today-button, button.fc-prev-button, button.fc-next-button {{
+                                background-color: {main_color} !important;
+                                background-image: none !important;
+                                border-color: {main_color} !important;
+                                color: #ffffff !important;
+                                border-radius: {theme_cfg['radius']} !important;
+                                font-weight: bold !important;
+                                opacity: 1 !important;
+                            }}
+                            .fc-button:hover, .fc-button-primary:hover, button.fc-today-button:hover, button.fc-prev-button:hover, button.fc-next-button:hover {{
+                                background-color: {secondary_color} !important;
+                                border-color: {secondary_color} !important;
+                                opacity: 0.9 !important;
+                            }}
+                            .fc-button:focus, .fc-button-primary:focus {{
+                                box-shadow: 0 0 0 0.2rem {main_color}66 !important;
+                            }}
+                            .fc-day-today {{
+                                background-color: {main_color}22 !important;
+                            }}
+                            .fc-toolbar-title {{
+                                color: {theme_cfg['header']} !important;
+                                font-family: {theme_cfg['font_family']} !important;
+                            }}
+                        `;
+                    }}
+                }} catch(e) {{}}
+            }});
+        }}
+        setInterval(injectCalendarStyles, 300);
+        </script>
+    """, height=0)
 
 today_dt = datetime.date.today()
 today_str = today_dt.strftime("%Y-%m-%d")
