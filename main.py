@@ -670,7 +670,7 @@ sub_color = st.session_state.sub_color if st.session_state.sub_color else theme_
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입
+# 동적 CSS 주입 (아날로그 노트 감성 추가)
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -690,7 +690,36 @@ if st.session_state.user is not None:
             letter-spacing: 1px;
         }}
         
-        .stTextArea textarea, .stTextInput input, div[data-testid="stForm"] {{
+        /* 📝 진짜 일기장(노트) 스타일 적용 */
+        .diary-note-container {{
+            background-color: #FFFDF9 !important;
+            color: #2C2C2C !important;
+            border: 1px solid {theme_cfg['card_border']} !important;
+            border-radius: 12px !important;
+            padding: 24px 24px 24px 36px !important;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.08), inset 0 0 15px rgba(245, 235, 215, 0.4) !important;
+            position: relative;
+            background-image: 
+                linear-gradient(90deg, transparent 32px, #FF808033 32px, #FF808033 34px, transparent 34px),
+                linear-gradient(#E5DFD3 1px, transparent 1px) !important;
+            background-size: 100% 32px !important;
+            line-height: 32px !important;
+        }}
+
+        .stTextArea textarea {{
+            background-color: transparent !important;
+            border: none !important;
+            border-radius: 0px !important;
+            color: #2C2C2C !important;
+            font-family: {theme_cfg['font_family']} !important;
+            font-size: 1.15rem !important;
+            line-height: 32px !important;
+            padding-top: 4px !important;
+            box-shadow: none !important;
+            resize: vertical !important;
+        }}
+        
+        .stTextInput input, div[data-testid="stForm"] {{
             background-color: {theme_cfg['card_bg']} !important;
             border: 1px solid {theme_cfg['card_border']} !important;
             border-radius: {theme_cfg['radius']} !important;
@@ -1311,7 +1340,13 @@ else:
                         header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
 
                         st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
-                        st.info(item['content'])
+                        
+                        # 모두의 이야기 모아보기 안의 글도 노트 스타일로 렌더링
+                        st.markdown(f"""
+                            <div class="diary-note-container" style="margin-bottom: 16px;">
+                                <div style="white-space: pre-wrap; color: #2C2C2C;">{item['content']}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
                         
                         comments = get_comments(item['username'], item['date'])
                         with st.expander(f"💬 댓글 ({len(comments)})"):
@@ -1334,7 +1369,7 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 5: 비밀/공개 일기 에디터
+    # PAGE 5: 비밀/공개 일기 에디터 (노트 디자인 적용)
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
@@ -1349,7 +1384,15 @@ else:
         sel_emo = st.selectbox("이날의 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
-        txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=200)
+        # 📝 진짜 일기장 노트 컨테이너 감싸기
+        st.markdown(f"""
+            <div class="diary-note-container">
+                <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">📖 {s_date}의 기록 ({sel_emo})</div>
+        """, unsafe_allow_html=True)
+
+        txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=280, label_visibility="collapsed")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
 
         friends = get_user_friends(current_user)
         existing_allow = ex_data.get("allow_friends", "") if "allow_friends" in ex_data else ""
@@ -1396,7 +1439,7 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 6: 교환일기 에디터
+    # PAGE 6: 교환일기 에디터 (노트 디자인 적용)
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
         eid = st.session_state.exchange_id
@@ -1410,7 +1453,14 @@ else:
             st.subheader(f"💌 상대방({partner_e_diary['nickname']})의 일기")
             p_vis = "🔒 둘만 보기" if partner_e_diary.get("is_public", 0) == 0 else "🌐 모두에게 공개"
             st.caption(f"공개 여부: {p_vis}")
-            st.info(f"{partner_e_diary['emotion']} {partner_e_diary['content']}")
+            
+            # 상대방 일기도 노트 스타일로 보여주기
+            st.markdown(f"""
+                <div class="diary-note-container" style="margin-bottom: 20px;">
+                    <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">{partner_e_diary['emotion']} {partner_e_diary['nickname']}님의 기록</div>
+                    <div style="white-space: pre-wrap; color: #2C2C2C;">{partner_e_diary['content']}</div>
+                </div>
+            """, unsafe_allow_html=True)
             st.markdown("---")
 
         st.subheader("내 교환일기 쓰기")
@@ -1418,7 +1468,15 @@ else:
         sel_emo = st.selectbox("오늘 상대방에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
-        txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=180)
+        # 📝 내 교환일기 작성부 노트 감성 적용
+        st.markdown(f"""
+            <div class="diary-note-container">
+                <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">📖 나의 교환일기 기록 ({sel_emo})</div>
+        """, unsafe_allow_html=True)
+
+        txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=250, label_visibility="collapsed")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
 
         curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
         ex_public_choice = st.radio(
