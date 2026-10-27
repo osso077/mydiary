@@ -148,13 +148,24 @@ def init_db():
         )
     ''')
 
-    # 사용자 커스텀 디데이 테이블 추가
     c.execute('''
         CREATE TABLE IF NOT EXISTS user_ddays (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT,
             title TEXT,
             target_date TEXT,
+            FOREIGN KEY (username) REFERENCES users(username)
+        )
+    ''')
+
+    # 계정 간 친구 관계 테이블 추가
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS friendships (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            friend_username TEXT,
+            friend_nickname TEXT,
+            friend_icon TEXT,
             FOREIGN KEY (username) REFERENCES users(username)
         )
     ''')
@@ -265,6 +276,50 @@ def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str)
     conn.close()
     push_db_to_github("Exchange connected")
     return True, eid
+
+def add_friend_by_code(my_username, friend_code):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT username, nickname, profile_icon FROM users WHERE invite_code = ?", (friend_code,))
+    friend = c.fetchone()
+    
+    if not friend:
+        conn.close()
+        return False, "존재하지 않는 초대코드입니다."
+    
+    f_username, f_nickname, f_icon = friend[0], friend[1], (friend[2] or '🧸')
+    if f_username == my_username:
+        conn.close()
+        return False, "자신의 초대코드는 입력할 수 없습니다."
+
+    # 이미 추가된 친구인지 확인
+    c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (my_username, f_username))
+    if c.fetchone():
+        conn.close()
+        return False, "이미 친구로 등록된 사용자입니다."
+
+    c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon) VALUES (?, ?, ?, ?)",
+              (my_username, f_username, f_nickname, f_icon))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Friend added")
+    return True, "친구가 성공적으로 추가되었습니다!"
+
+def get_user_friends(username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, friend_username, friend_nickname, friend_icon FROM friendships WHERE username = ?", (username,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r[0], "friend_username": r[1], "friend_nickname": r[2], "friend_icon": r[3]} for r in rows]
+
+def delete_friend(friendship_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM friendships WHERE id = ?", (friendship_id,))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Friend deleted")
 
 def get_user_ddays(username):
     conn = get_connection()
@@ -791,6 +846,7 @@ else:
 
     st.sidebar.title(app_title.split()[0] + " 일기장")
     st.sidebar.markdown(f"### {current_profile_icon} **{current_nickname}** 님")
+    st.sidebar.info(f"내 초대코드: **{st.session_state.invite_code}**")
     
     # 교환일기 D-Day 표시
     if st.session_state.exchange_id and st.session_state.exchange_start_date:
@@ -815,9 +871,7 @@ else:
         ("🎉 새해(신정)", datetime.date(cur_year + 1, 1, 1))
     ]
 
-    # 주요 이벤트 (2주일 전부터 표시)
     for ev_name, ev_date in events_to_check:
-        # 이미 지나갔으면 내년으로 계산
         if ev_date < today_dt:
             ev_date = datetime.date(cur_year + 1, ev_date.month, ev_date.day)
         
@@ -826,7 +880,6 @@ else:
             d_label = "D-Day" if diff == 0 else f"D-{diff}"
             st.sidebar.info(f"{ev_name}까지 **{d_label}** 남았습니다! 🎉")
 
-    # 사용자가 직접 등록한 커스텀 디데이 표시
     user_ddays = get_user_ddays(current_user)
     if user_ddays:
         for ud in user_ddays:
@@ -943,7 +996,7 @@ else:
 
     st.sidebar.markdown("---")
     
-    menu_options = ["🔒 비밀일기", "📅 일정 관리", "💌 교환일기", "🌐 공개일기"]
+    menu_options = ["🔒 비밀일기", "📅 일정 관리", "👥 친구 관리", "💌 교환일기", "🌐 공개일기"]
     nav_choice = st.sidebar.radio("메뉴 선택", menu_options)
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
@@ -951,6 +1004,9 @@ else:
         st.rerun()
     elif nav_choice == "📅 일정 관리" and st.session_state.page not in ["schedule_calendar", "schedule_editor"]:
         st.session_state.page = "schedule_calendar"
+        st.rerun()
+    elif nav_choice == "👥 친구 관리" and st.session_state.page != "friend_management":
+        st.session_state.page = "friend_management"
         st.rerun()
     elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor", "exchange_setup"]:
         if st.session_state.exchange_id:
@@ -1078,6 +1134,40 @@ else:
             if st.button("🗓️ 일정 달력으로 돌아가기", use_container_width=True):
                 st.session_state.page = "schedule_calendar"
                 st.rerun()
+
+    # PAGE 2.5: 👥 친구 관리 화면
+    elif st.session_state.page == "friend_management":
+        st.header("👥 친구 관리")
+        st.write("친구의 초대코드를 입력하여 친구를 추가하고 목록을 관리해 보세요!")
+
+        friend_code_input = st.text_input("친구 초대코드 입력")
+        if st.button("👥 친구 추가하기", use_container_width=True):
+            if friend_code_input.strip():
+                ok, msg = add_friend_by_code(current_user, friend_code_input.strip().upper())
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+            else:
+                st.warning("친구의 초대코드를 입력해 주세요.")
+
+        st.markdown("---")
+        st.subheader("📋 내 친구 목록")
+        friends = get_user_friends(current_user)
+        if friends:
+            for f in friends:
+                c_info, c_del = st.columns([5, 1])
+                with c_info:
+                    st.markdown(f"### {f['friend_icon']} **{f['friend_nickname']}** 님")
+                with c_del:
+                    if st.button("친구 삭제", key=f"del_f_{f['id']}"):
+                        delete_friend(f['id'])
+                        st.success("친구를 삭제했습니다.")
+                        st.rerun()
+                st.markdown("---")
+        else:
+            st.write("🌿 아직 등록된 친구가 없어요.")
 
     # PAGE 3-0: 💌 교환일기 연결 설정
     elif st.session_state.page == "exchange_setup":
