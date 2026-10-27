@@ -679,6 +679,7 @@ if "page" not in st.session_state:
 
 STANDARD_EMOTIONS = ["👁️‍🗨️ 몽환", "😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤", "🥰 사랑"]
 EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
+PROFILE_EMOJIS = ["🧸", "✨", "🐰", "🌸", "🍓", "🐥", "🌙", "⭐", "🍀", "🎀", "🐱", "🐶"]
 
 
 # =========================================================
@@ -769,10 +770,22 @@ else:
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 1. 내 정보 프로필 관리 전용 (이모티콘 전용 프로필 설정)
+    # 1. 내 정보 프로필 관리 전용 (이모티콘 선택 버튼 방식)
     with st.sidebar.expander("✏️ 내 정보 관리 (프로필)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
-        edit_icon = st.text_input("프로필 이모티콘 (예: 🧸, ✨, 🐰 등)", value=current_profile_icon, max_chars=4, key="edit_icon_input")
+        
+        st.write("프로필 이모티콘 선택:")
+        # 이모티콘 칩 그리드 생성 (4열)
+        cols_emoji = st.columns(4)
+        selected_icon = current_profile_icon
+        for idx, emo in enumerate(PROFILE_EMOJIS):
+            col_idx = idx % 4
+            with cols_emoji[col_idx]:
+                btn_label = f"✨ {emo}" if emo == current_profile_icon else emo
+                if st.button(btn_label, key=f"emo_btn_{emo}", use_container_width=True):
+                    selected_icon = emo
+
+        st.caption(f"현재 선택된 이모티콘: **{selected_icon}**")
         
         has_bday = bool(user_birthdate)
         update_bday = st.checkbox("생년월일 설정/수정", value=has_bday)
@@ -796,12 +809,11 @@ else:
 
         if st.button("프로필 변경 저장", use_container_width=True):
             cleaned_nick = edit_nick.strip()
-            cleaned_icon = edit_icon.strip() if edit_icon.strip() else "🧸"
             if cleaned_nick:
-                update_user_info(current_user, cleaned_nick, new_bday_str, cleaned_icon)
+                update_user_info(current_user, cleaned_nick, new_bday_str, selected_icon)
                 st.session_state.nickname = cleaned_nick
                 st.session_state.birthdate = new_bday_str
-                st.session_state.profile_icon = cleaned_icon
+                st.session_state.profile_icon = selected_icon
                 st.success("프로필 정보가 수정되었습니다!")
                 st.rerun()
 
