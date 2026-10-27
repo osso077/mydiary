@@ -802,7 +802,7 @@ if "selected_date" not in st.session_state:
 if "page" not in st.session_state:
     st.session_state.page = "secret_calendar"
 
-STANDARD_EMOTIONS = ["😊 기쁨", "😢 슬픔", "😡 화남", "😰 불안/두려움", "😌 평온", "🌧️ 외로움", "🌱 뿌듯함", "😴 피곤", "✨ 설렘", "💌 그리움"]
+STANDARD_EMOTIONS = ["😊 기쁨", "😢 슬픔", "😡 화남", "😰 불안/두려움", "😌 평온", "🥲 외로움", "🥰 뿌듯함", "😴 피곤", "✨ 설렘", "🥹 그리움"]
 EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
 PROFILE_ICONS = ["🧸", "✨", "🐰", "🌸", "🍓", "🐥", "🌙", "⭐", "🍀", "🎀", "🐱", "🐶"]
 
