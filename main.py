@@ -802,7 +802,7 @@ if "selected_date" not in st.session_state:
 if "page" not in st.session_state:
     st.session_state.page = "secret_calendar"
 
-STANDARD_EMOTIONS = ["👁️‍🗨️ 몽환", "😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤", "🥰 사랑"]
+STANDARD_EMOTIONS = ["😊 기쁨", "✨ 설렘", "😌 평온", "🍃 홀가분", "😢 슬픔", "💧 우울", "😡 화남", "😤 억울", "😴 피곤", "☕ 여유", "🥰 사랑", "⚡ 긴장"]
 EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
 PROFILE_ICONS = ["🧸", "✨", "🐰", "🌸", "🍓", "🐥", "🌙", "⭐", "🍀", "🎀", "🐱", "🐶"]
 
@@ -1346,7 +1346,7 @@ else:
         ex_data = diaries.get(s_date, {})
 
         idx = EMOJI_LIST.index(ex_data.get("emotion")) if ex_data.get("emotion") in EMOJI_LIST else 0
-        sel_emo = st.radio("이날의 감정:", STANDARD_EMOTIONS, index=idx, horizontal=True)
+        sel_emo = st.selectbox("이날의 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
         txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=200)
@@ -1415,7 +1415,7 @@ else:
 
         st.subheader("내 교환일기 쓰기")
         idx = EMOJI_LIST.index(my_e_diary['emotion']) if my_e_diary and my_e_diary['emotion'] in EMOJI_LIST else 0
-        sel_emo = st.radio("오늘 상대방에게 전할 감정:", STANDARD_EMOTIONS, index=idx, horizontal=True)
+        sel_emo = st.selectbox("오늘 상대방에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
         txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=180)
