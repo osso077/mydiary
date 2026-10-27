@@ -102,6 +102,7 @@ def init_db():
             emotion TEXT,
             content TEXT,
             is_public INTEGER DEFAULT 0,
+            views INTEGER DEFAULT 0,
             PRIMARY KEY (username, date),
             FOREIGN KEY (username) REFERENCES users(username)
         )
@@ -116,6 +117,7 @@ def init_db():
             emotion TEXT,
             content TEXT,
             is_public INTEGER DEFAULT 0,
+            views INTEGER DEFAULT 0,
             PRIMARY KEY (exchange_id, date, username)
         )
     ''')
@@ -133,7 +135,6 @@ def init_db():
         )
     ''')
 
-    # 일정/스케줄 테이블 추가
     c.execute('''
         CREATE TABLE IF NOT EXISTS schedules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,7 +158,9 @@ def init_db():
         ("users", "exchange_type TEXT DEFAULT '연인'"),
         ("users", "exchange_start_date TEXT DEFAULT ''"),
         ("diaries", "is_public INTEGER DEFAULT 0"),
-        ("exchange_diaries", "is_public INTEGER DEFAULT 0")
+        ("diaries", "views INTEGER DEFAULT 0"),
+        ("exchange_diaries", "is_public INTEGER DEFAULT 0"),
+        ("exchange_diaries", "views INTEGER DEFAULT 0")
     ]
     for tbl, col in cols:
         try:
@@ -267,12 +270,12 @@ def get_all_public_diaries():
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT d.date, d.emotion, d.content, u.nickname, d.username
+        SELECT d.date, d.emotion, d.content, u.nickname, d.username, d.views, 'individual' AS type
         FROM diaries d
         JOIN users u ON d.username = u.username
         WHERE d.is_public = 1
         UNION ALL
-        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username
+        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type
         FROM exchange_diaries ed
         WHERE ed.is_public = 1
         ORDER BY date DESC
@@ -284,9 +287,22 @@ def get_all_public_diaries():
     for r in rows:
         public_list.append({
             "date": r[0], "emotion": r[1], "content": r[2], 
-            "nickname": r[3], "username": r[4]
+            "nickname": r[3], "username": r[4], "views": r[5], "type": r[6]
         })
     return public_list
+
+def increment_public_views(username, date_str, diary_type, current_user):
+    # 본인이 작성한 글은 조회수 증가 안 함
+    if username == current_user:
+        return
+    conn = get_connection()
+    c = conn.cursor()
+    if diary_type == 'individual':
+        c.execute("UPDATE diaries SET views = views + 1 WHERE username = ? AND date = ?", (username, date_str))
+    else:
+        c.execute("UPDATE exchange_diaries SET views = views + 1 WHERE username = ? AND date = ?", (username, date_str))
+    conn.commit()
+    conn.close()
 
 def save_diary(username, date_str, emotion, content, is_public):
     conn = get_connection()
@@ -313,16 +329,16 @@ def delete_diary(username, date_str):
 def get_exchange_diaries(exchange_id):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT date, username, nickname, emotion, content, is_public FROM exchange_diaries WHERE exchange_id = ?", (exchange_id,))
+    c.execute("SELECT date, username, nickname, emotion, content, is_public, views FROM exchange_diaries WHERE exchange_id = ?", (exchange_id,))
     rows = c.fetchall()
     conn.close()
     
     result = {}
     for r in rows:
-        dt, un, nk, em, ct, ip = r[0], r[1], r[2], r[3], r[4], r[5]
+        dt, un, nk, em, ct, ip, vw = r[0], r[1], r[2], r[3], r[4], r[5], r[6]
         if dt not in result:
             result[dt] = []
-        result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct, "is_public": ip})
+        result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct, "is_public": ip, "views": vw})
     return result
 
 def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, content, is_public):
@@ -338,7 +354,6 @@ def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, cont
     conn.close()
     push_db_to_github(f"Update exchange diary for {date_str}")
 
-# --- 일정 관련 DB 헬퍼 함수 ---
 def add_schedule(username, date_str, title, category):
     color = SCHEDULE_CATEGORIES.get(category, "#8B5CF6")
     conn = get_connection()
@@ -727,7 +742,6 @@ else:
     current_nickname = st.session_state.nickname
     user_birthdate = st.session_state.birthdate
     
-    # 생일 당일 축하 메시지
     if user_birthdate and len(user_birthdate) == 10:
         if user_birthdate[5:] == today_str[5:]:
             st.balloons()
@@ -885,7 +899,6 @@ else:
         st.header("📅 나의 카테고리별 일정 관리")
         schedules = get_user_schedules(current_user)
 
-        # 카테고리 범례(안내) 표시
         legend_cols = st.columns(len(SCHEDULE_CATEGORIES))
         for idx, (cat_name, cat_color) in enumerate(SCHEDULE_CATEGORIES.items()):
             with legend_cols[idx]:
@@ -917,7 +930,6 @@ else:
         s_date = st.session_state.selected_date
         st.header(f"📅 일정 관리 ({s_date})")
 
-        # 해당 날짜 기존 일정 목록
         all_schedules = get_user_schedules(current_user)
         day_schedules = [s for s in all_schedules if s['date'] == s_date]
 
@@ -1040,8 +1052,11 @@ else:
             all_publics = get_all_public_diaries()
             if all_publics:
                 for item in all_publics:
+                    # 조회수 증가 처리 (본인 글이 아닐 때만 집계)
+                    increment_public_views(item['username'], item['date'], item['type'], current_user)
+                    
                     with st.container():
-                        st.markdown(f"#### {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})")
+                        st.markdown(f"#### {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
                         st.info(item['content'])
                         
                         comments = get_comments(item['username'], item['date'])
