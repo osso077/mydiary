@@ -85,6 +85,7 @@ def init_db():
             password TEXT NOT NULL,
             nickname TEXT NOT NULL,
             birthdate TEXT DEFAULT '',
+            profile_icon TEXT DEFAULT '🧸',
             theme TEXT DEFAULT '포근함',
             main_color TEXT DEFAULT '#DDA15E',
             sub_color TEXT DEFAULT '#BC6C25',
@@ -150,6 +151,7 @@ def init_db():
     cols = [
         ("users", "nickname TEXT DEFAULT ''"),
         ("users", "birthdate TEXT DEFAULT ''"),
+        ("users", "profile_icon TEXT DEFAULT '🧸'"),
         ("users", "theme TEXT DEFAULT '포근함'"),
         ("users", "main_color TEXT DEFAULT '#DDA15E'"),
         ("users", "sub_color TEXT DEFAULT '#BC6C25'"),
@@ -181,8 +183,8 @@ def register_user(username, password, nickname, birthdate=""):
     code = generate_invite_code()
     try:
         c.execute('''
-            INSERT INTO users (username, password, nickname, birthdate, theme, main_color, sub_color, invite_code) 
-            VALUES (?, ?, ?, ?, '포근함', '#DDA15E', '#BC6C25', ?)
+            INSERT INTO users (username, password, nickname, birthdate, profile_icon, theme, main_color, sub_color, invite_code) 
+            VALUES (?, ?, ?, ?, '🧸', '포근함', '#DDA15E', '#BC6C25', ?)
         ''', (username, hashed_pw, nickname, birthdate, code))
         conn.commit()
         push_db_to_github("New user registered")
@@ -195,24 +197,24 @@ def register_user(username, password, nickname, birthdate=""):
 def login_user(username, password):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password, nickname, birthdate, theme, main_color, sub_color, invite_code, exchange_id, exchange_type, exchange_start_date FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password, nickname, birthdate, profile_icon, theme, main_color, sub_color, invite_code, exchange_id, exchange_type, exchange_start_date FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
         stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
-            inv_code = row[6] if row[6] else generate_invite_code()
-            return True, row[1], row[2], (row[3] or '포근함'), (row[4] or '#DDA15E'), (row[5] or '#BC6C25'), inv_code, row[7], row[8], row[9]
-    return False, None, None, '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
+            inv_code = row[7] if row[7] else generate_invite_code()
+            return True, row[1], row[2], (row[3] or '🧸'), (row[4] or '포근함'), (row[5] or '#DDA15E'), (row[6] or '#BC6C25'), inv_code, row[8], row[9], row[10]
+    return False, None, None, '🧸', '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
 
-def update_user_info(username, new_nickname, new_birthdate):
+def update_user_info(username, new_nickname, new_birthdate, new_profile_icon):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
         UPDATE users 
-        SET nickname = ?, birthdate = ? 
+        SET nickname = ?, birthdate = ?, profile_icon = ? 
         WHERE username = ?
-    ''', (new_nickname, new_birthdate, username))
+    ''', (new_nickname, new_birthdate, new_profile_icon, username))
     conn.commit()
     conn.close()
     push_db_to_github(f"Update info for user {username}")
@@ -270,13 +272,14 @@ def get_all_public_diaries():
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT d.date, d.emotion, d.content, u.nickname, d.username, d.views, 'individual' AS type
+        SELECT d.date, d.emotion, d.content, u.nickname, d.username, d.views, 'individual' AS type, u.profile_icon
         FROM diaries d
         JOIN users u ON d.username = u.username
         WHERE d.is_public = 1
         UNION ALL
-        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type
+        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '🧸') AS profile_icon
         FROM exchange_diaries ed
+        LEFT JOIN users u ON ed.username = u.username
         WHERE ed.is_public = 1
         ORDER BY date DESC
     ''')
@@ -287,12 +290,11 @@ def get_all_public_diaries():
     for r in rows:
         public_list.append({
             "date": r[0], "emotion": r[1], "content": r[2], 
-            "nickname": r[3], "username": r[4], "views": r[5], "type": r[6]
+            "nickname": r[3], "username": r[4], "views": r[5], "type": r[6], "profile_icon": r[7] if r[7] else '🧸'
         })
     return public_list
 
 def increment_public_views(username, date_str, diary_type, current_user):
-    # 본인이 작성한 글은 조회수 증가 안 함
     if username == current_user:
         return
     conn = get_connection()
@@ -519,6 +521,8 @@ if "nickname" not in st.session_state:
     st.session_state.nickname = None
 if "birthdate" not in st.session_state:
     st.session_state.birthdate = None
+if "profile_icon" not in st.session_state:
+    st.session_state.profile_icon = "🧸"
 if "theme" not in st.session_state:
     st.session_state.theme = "👁️‍🗨️ 드림코어"
 if "main_color" not in st.session_state:
@@ -691,11 +695,12 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname, birthdate, theme, m_color, s_color, inv_code, e_id, e_type, e_sdate = login_user(username_input, password_input)
+                is_success, nickname, birthdate, profile_icon, theme, m_color, s_color, inv_code, e_id, e_type, e_sdate = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
                     st.session_state.birthdate = birthdate
+                    st.session_state.profile_icon = profile_icon if profile_icon else "🧸"
                     st.session_state.theme = theme
                     st.session_state.main_color = m_color
                     st.session_state.sub_color = s_color
@@ -741,6 +746,7 @@ else:
     current_user = st.session_state.user
     current_nickname = st.session_state.nickname
     user_birthdate = st.session_state.birthdate
+    current_profile_icon = st.session_state.profile_icon if st.session_state.profile_icon else "🧸"
     
     if user_birthdate and len(user_birthdate) == 10:
         if user_birthdate[5:] == today_str[5:]:
@@ -748,7 +754,7 @@ else:
             st.toast(f"🎂 {current_nickname}님, 생일을 진심으로 축하합니다! 🎉", icon="🎁")
 
     st.sidebar.title(app_title.split()[0] + " 일기장")
-    st.sidebar.write(f"👤 **{current_nickname}** 님")
+    st.sidebar.markdown(f"### {current_profile_icon} **{current_nickname}** 님")
     
     # 교환일기 D-Day 표시
     if st.session_state.exchange_id and st.session_state.exchange_start_date:
@@ -763,9 +769,10 @@ else:
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 1. 내 정보 프로필 관리 전용
+    # 1. 내 정보 프로필 관리 전용 (프로필 사진 변경 추가)
     with st.sidebar.expander("✏️ 내 정보 관리 (프로필)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
+        edit_icon = st.text_input("프로필 사진/아이디 (이모지 또는 이미지 URL)", value=current_profile_icon, key="edit_icon_input")
         
         has_bday = bool(user_birthdate)
         update_bday = st.checkbox("생년월일 설정/수정", value=has_bday)
@@ -789,10 +796,12 @@ else:
 
         if st.button("프로필 변경 저장", use_container_width=True):
             cleaned_nick = edit_nick.strip()
+            cleaned_icon = edit_icon.strip() if edit_icon.strip() else "🧸"
             if cleaned_nick:
-                update_user_info(current_user, cleaned_nick, new_bday_str)
+                update_user_info(current_user, cleaned_nick, new_bday_str, cleaned_icon)
                 st.session_state.nickname = cleaned_nick
                 st.session_state.birthdate = new_bday_str
+                st.session_state.profile_icon = cleaned_icon
                 st.success("프로필 정보가 수정되었습니다!")
                 st.rerun()
 
@@ -1052,11 +1061,17 @@ else:
             all_publics = get_all_public_diaries()
             if all_publics:
                 for item in all_publics:
-                    # 조회수 증가 처리 (본인 글이 아닐 때만 집계)
                     increment_public_views(item['username'], item['date'], item['type'], current_user)
                     
                     with st.container():
-                        st.markdown(f"#### {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
+                        p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
+                        # 이미지 URL인 경우와 이모지인 경우 분기 처리
+                        if p_icon.startswith("http://") or p_icon.startswith("https://"):
+                            header_title = f"<img src='{p_icon}' width='24' style='border-radius: 50%; vertical-align: middle;'> {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
+                        else:
+                            header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
+
+                        st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
                         st.info(item['content'])
                         
                         comments = get_comments(item['username'], item['date'])
@@ -1154,7 +1169,7 @@ else:
             if st.button("💌 교환일기 저장", use_container_width=True):
                 if txt.strip():
                     save_exchange_diary(eid, s_date, current_user, current_nickname, sel_emoji, txt.strip(), is_ex_public)
-                    st.success("교환일기가 저장되었습니다!")
+                    st.success("교환일기가 성공적으로 저장되었습니다!")
                     st.session_state.page = "exchange_calendar"
                     st.rerun()
         with col2:
