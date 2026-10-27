@@ -355,7 +355,6 @@ def get_user_diaries(username, is_public_flag):
     diaries = {}
     for r in rows:
         dt, em, ct, ip, af = r[0], r[1], r[2], r[3], r[4]
-        # is_public_flag가 True이면 공개(is_public == 1 또는 allow_friends에 값이 있는 경우)를 조회
         if is_public_flag:
             if ip == 1 or (af and len(af.strip()) > 0):
                 diaries[dt] = {"emotion": em, "content": ct, "is_public": ip, "allow_friends": af}
@@ -367,7 +366,6 @@ def get_user_diaries(username, is_public_flag):
 def get_all_public_diaries(current_user):
     conn = get_connection()
     c = conn.cursor()
-    # 전체 공개 일기 또는 내가 친구로 포함된 일기 가져오기
     c.execute('''
         SELECT d.date, d.emotion, d.content, u.nickname, d.username, d.views, 'individual' AS type, u.profile_icon, d.is_public, d.allow_friends
         FROM diaries d
@@ -385,7 +383,6 @@ def get_all_public_diaries(current_user):
     
     public_list = []
     for r in rows:
-        # allow_friends에 내 username이 포함되어 있거나 전체 공개(is_public == 1)인 경우만 필터링
         is_pub = r[8]
         allow_str = r[9] if r[9] else ""
         if is_pub == 1 or current_user == r[4] or current_user in [x.strip() for x in allow_str.split(",") if x.strip()]:
@@ -869,50 +866,14 @@ else:
         except ValueError:
             pass
 
+    # =========================================================
+    # 사이드바 칸 나누기 및 메뉴 구성
+    # =========================================================
     st.sidebar.markdown("---")
-    st.sidebar.subheader("⏳ D-Day 알림판")
-
-    cur_year = today_dt.year
-    events_to_check = [
-        ("🎄 크리스마스", datetime.date(cur_year, 12, 25)),
-        ("🎉 새해(신정)", datetime.date(cur_year + 1, 1, 1))
-    ]
-
-    for ev_name, ev_date in events_to_check:
-        if ev_date < today_dt:
-            ev_date = datetime.date(cur_year + 1, ev_date.month, ev_date.day)
-        
-        diff = (ev_date - today_dt).days
-        if 0 <= diff <= 14:
-            d_label = "D-Day" if diff == 0 else f"D-{diff}"
-            st.sidebar.info(f"{ev_name}까지 **{d_label}** 남았습니다! 🎉")
-
-    user_ddays = get_user_ddays(current_user)
-    if user_ddays:
-        for ud in user_ddays:
-            try:
-                t_dt = datetime.datetime.strptime(ud['target_date'], "%Y-%m-%d").date()
-                diff = (t_dt - today_dt).days
-                if diff == 0:
-                    d_txt = "D-Day 🎉"
-                elif diff > 0:
-                    d_txt = f"D-{diff}"
-                else:
-                    d_txt = f"D+{abs(diff)}"
-                
-                col_d1, col_d2 = st.sidebar.columns([4, 1])
-                with col_d1:
-                    st.write(f"📌 **{ud['title']}**: {d_txt} ({ud['target_date']})")
-                with col_d2:
-                    if st.button("❌", key=f"del_ud_{ud['id']}"):
-                        delete_user_dday(ud['id'])
-                        st.rerun()
-            except Exception:
-                pass
-
-    st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    with st.sidebar.expander("✏️ 내 정보 관리 (프로필)"):
+    # 1. 내 메뉴 (정보설정 & 테마관리)
+    st.sidebar.markdown("### 👤 내 메뉴")
+    with st.sidebar.expander("⚙️ 정보설정 (프로필)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
         st.write("프로필 이모티콘 선택:")
@@ -957,18 +918,7 @@ else:
                 st.success("프로필 정보가 수정되었습니다!")
                 st.rerun()
 
-    with st.sidebar.expander("⏰ 나만의 디데이 추가"):
-        new_dday_title = st.text_input("디데이 제목", placeholder="예: 시험일, 여행 D-day")
-        new_dday_date = st.date_input("목표 날짜", value=today_dt)
-        if st.button("디데이 등록하기", use_container_width=True):
-            if new_dday_title.strip():
-                add_user_dday(current_user, new_dday_title.strip(), new_dday_date.strftime("%Y-%m-%d"))
-                st.success("디데이가 추가되었습니다!")
-                st.rerun()
-            else:
-                st.warning("디데이 제목을 입력해 주세요.")
-
-    with st.sidebar.expander("🎨 테마 & 색상 설정"):
+    with st.sidebar.expander("🎨 테마관리 (분위기 & 색상)"):
         theme_options = list(THEME_STYLES.keys())
         current_theme_idx = theme_options.index(st.session_state.theme) if st.session_state.theme in theme_options else 0
         
@@ -979,38 +929,124 @@ else:
         
         col_m, col_s = st.columns(2)
         with col_m:
-            selected_main = st.color_picker("포인트 메인 컬러", value=sug_main)
+            selected_main = st.color_picker("포인트 메인", value=sug_main)
         with col_s:
-            selected_sub = st.color_picker("서브 보조 컬러", value=sug_sub)
+            selected_sub = st.color_picker("서브 보조", value=sug_sub)
 
-        if st.button("테마/색상 적용", use_container_width=True):
+        if st.button("테마 적용하기", use_container_width=True):
             update_user_theme(current_user, selected_theme, selected_main, selected_sub)
             st.session_state.theme = selected_theme
             st.session_state.main_color = selected_main
             st.session_state.sub_color = selected_sub
-            st.success("테마와 색상이 적용되었습니다!")
+            st.success("테마가 적용되었습니다!")
             st.rerun()
 
-    if st.sidebar.button("🔒 로그아웃"):
-        st.session_state.user = None
-        st.session_state.nickname = None
-        st.session_state.exchange_id = ""
-        st.session_state.page = "secret_calendar"
-        st.rerun()
-
+    # 2. 일정관리 (디데이 & 일정추가)
     st.sidebar.markdown("---")
-    
-    menu_options = ["🔒 비밀일기", "📅 일정 관리", "👥 친구 관리", "💌 교환일기", "🌐 공개일기"]
-    nav_choice = st.sidebar.radio("메뉴 선택", menu_options)
+    st.sidebar.markdown("### 📅 일정관리")
+
+    cur_year = today_dt.year
+    events_to_check = [
+        ("🎄 크리스마스", datetime.date(cur_year, 12, 25)),
+        ("🎉 새해(신정)", datetime.date(cur_year + 1, 1, 1))
+    ]
+    for ev_name, ev_date in events_to_check:
+        if ev_date < today_dt:
+            ev_date = datetime.date(cur_year + 1, ev_date.month, ev_date.day)
+        diff = (ev_date - today_dt).days
+        if 0 <= diff <= 14:
+            d_label = "D-Day" if diff == 0 else f"D-{diff}"
+            st.sidebar.info(f"{ev_name}까지 **{d_label}** 남았습니다! 🎉")
+
+    user_ddays = get_user_ddays(current_user)
+    if user_ddays:
+        for ud in user_ddays:
+            try:
+                t_dt = datetime.datetime.strptime(ud['target_date'], "%Y-%m-%d").date()
+                diff = (t_dt - today_dt).days
+                d_txt = "D-Day 🎉" if diff == 0 else (f"D-{diff}" if diff > 0 else f"D+{abs(diff)}")
+                col_d1, col_d2 = st.sidebar.columns([4, 1])
+                with col_d1:
+                    st.write(f"📌 {ud['title']}: {d_txt}")
+                with col_d2:
+                    if st.button("❌", key=f"del_ud_{ud['id']}"):
+                        delete_user_dday(ud['id'])
+                        st.rerun()
+            except Exception:
+                pass
+
+    with st.sidebar.expander("⏳ 디데이 추가"):
+        new_dday_title = st.text_input("디데이 제목", placeholder="예: 시험일, 여행")
+        new_dday_date = st.date_input("목표 날짜", value=today_dt)
+        if st.button("디데이 등록", use_container_width=True):
+            if new_dday_title.strip():
+                add_user_dday(current_user, new_dday_title.strip(), new_dday_date.strftime("%Y-%m-%d"))
+                st.success("디데이가 추가되었습니다!")
+                st.rerun()
+            else:
+                st.warning("디데이 제목을 입력해 주세요.")
+
+    # 3. 친구기능 (친구관리 & 교환일기 추가)
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 👥 친구기능")
+    with st.sidebar.expander("👥 친구 관리"):
+        friend_code_input = st.text_input("친구 초대코드 입력")
+        if st.button("친구 추가하기", use_container_width=True):
+            if friend_code_input.strip():
+                ok, msg = add_friend_by_code(current_user, friend_code_input.strip().upper())
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+            else:
+                st.warning("초대코드를 입력해 주세요.")
+        
+        st.markdown("---")
+        friends = get_user_friends(current_user)
+        if friends:
+            for f in friends:
+                fc1, fc2 = st.columns([4, 1])
+                with fc1: st.write(f"{f['friend_icon']} {f['friend_nickname']}")
+                with fc2:
+                    if st.button("삭제", key=f"del_f_{f['id']}"):
+                        delete_friend(f['id'])
+                        st.rerun()
+        else:
+            st.caption("등록된 친구가 없습니다.")
+
+    with st.sidebar.expander("💌 교환일기 추가"):
+        st.write("소중한 친구/연인의 초대코드를 입력하여 새로운 교환일기를 시작하세요!")
+        partner_code_input = st.text_input("상대방 초대코드")
+        ex_type_input = st.radio("관계", ["연인", "친구"], horizontal=True)
+        ex_start_input = st.date_input("시작일", value=today_dt, max_value=today_dt)
+        if st.button("교환일기 연결 시작", use_container_width=True):
+            if partner_code_input.strip():
+                is_ok, msg = connect_exchange_by_code(
+                    current_user, partner_code_input.strip().upper(), ex_type_input, ex_start_input.strftime("%Y-%m-%d")
+                )
+                if is_ok:
+                    st.session_state.exchange_id = msg
+                    st.session_state.exchange_type = ex_type_input
+                    st.session_state.exchange_start_date = ex_start_input.strftime("%Y-%m-%d")
+                    st.success("교환일기가 시작되었습니다! 🎉")
+                    st.rerun()
+                else:
+                    st.error(msg)
+            else:
+                st.warning("초대코드를 입력해 주세요.")
+
+    # 4. 일기 (교환일기/비밀일기/공개일기 선택)
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📖 일기")
+    menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기"]
+    nav_choice = st.sidebar.radio("일기 메뉴", menu_options, label_visibility="collapsed")
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
         st.session_state.page = "secret_calendar"
         st.rerun()
-    elif nav_choice == "📅 일정 관리" and st.session_state.page not in ["schedule_calendar", "schedule_editor"]:
+    elif nav_choice == "📅 일정 관리 달력" and st.session_state.page not in ["schedule_calendar", "schedule_editor"]:
         st.session_state.page = "schedule_calendar"
-        st.rerun()
-    elif nav_choice == "👥 친구 관리" and st.session_state.page != "friend_management":
-        st.session_state.page = "friend_management"
         st.rerun()
     elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor", "exchange_setup"]:
         if st.session_state.exchange_id:
@@ -1020,6 +1056,14 @@ else:
         st.rerun()
     elif nav_choice == "🌐 공개일기" and st.session_state.page not in ["public_calendar", "public_editor"]:
         st.session_state.page = "public_calendar"
+        st.rerun()
+
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔒 로그아웃", use_container_width=True):
+        st.session_state.user = None
+        st.session_state.nickname = None
+        st.session_state.exchange_id = ""
+        st.session_state.page = "secret_calendar"
         st.rerun()
 
     st.title(app_title)
@@ -1138,40 +1182,6 @@ else:
                 st.session_state.page = "schedule_calendar"
                 st.rerun()
 
-    # PAGE 2.5: 👥 친구 관리 화면
-    elif st.session_state.page == "friend_management":
-        st.header("👥 친구 관리")
-        st.write("친구의 초대코드를 입력하여 친구를 추가하고 목록을 관리해 보세요!")
-
-        friend_code_input = st.text_input("친구 초대코드 입력")
-        if st.button("👥 친구 추가하기", use_container_width=True):
-            if friend_code_input.strip():
-                ok, msg = add_friend_by_code(current_user, friend_code_input.strip().upper())
-                if ok:
-                    st.success(msg)
-                    st.rerun()
-                else:
-                    st.error(msg)
-            else:
-                st.warning("친구의 초대코드를 입력해 주세요.")
-
-        st.markdown("---")
-        st.subheader("📋 내 친구 목록")
-        friends = get_user_friends(current_user)
-        if friends:
-            for f in friends:
-                c_info, c_del = st.columns([5, 1])
-                with c_info:
-                    st.markdown(f"### {f['friend_icon']} **{f['friend_nickname']}** 님")
-                with c_del:
-                    if st.button("친구 삭제", key=f"del_f_{f['id']}"):
-                        delete_friend(f['id'])
-                        st.success("친구를 삭제했습니다.")
-                        st.rerun()
-                st.markdown("---")
-        else:
-            st.write("🌿 아직 등록된 친구가 없어요.")
-
     # PAGE 3-0: 💌 교환일기 연결 설정
     elif st.session_state.page == "exchange_setup":
         st.header("💌 소중한 사람과 교환일기 시작하기")
@@ -1289,7 +1299,7 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 5: 비밀/공개 일기 에디터 (친구 선택 공개 기능 추가)
+    # PAGE 5: 비밀/공개 일기 에디터
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
@@ -1306,11 +1316,7 @@ else:
 
         txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=200)
 
-        # 공개 범위 상세 설정 (비밀일기 작성 시에도 친구 선택 공개 가능)
         friends = get_user_friends(current_user)
-        friend_usernames = [f['friend_username'] for f in friends]
-        friend_map = {f['friend_username']: f['friend_nickname'] for f in friends}
-
         existing_allow = ex_data.get("allow_friends", "") if "allow_friends" in ex_data else ""
         existing_allow_list = [x.strip() for x in existing_allow.split(",") if x.strip()]
 
@@ -1331,7 +1337,7 @@ else:
                     if st.checkbox(f"{f['friend_icon']} {f['friend_nickname']}", value=is_checked, key=f"chk_friend_{f['friend_username']} {s_date}"):
                         selected_allow_friends.append(f['friend_username'])
             else:
-                st.info("등록된 친구가 없습니다. '친구 관리' 메뉴에서 친구를 먼저 추가해 주세요!")
+                st.info("등록된 친구가 없습니다. 사이드바 '친구기능'에서 친구를 먼저 추가해 주세요!")
 
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
