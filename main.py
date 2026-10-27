@@ -86,6 +86,7 @@ def init_db():
             nickname TEXT NOT NULL,
             birthdate TEXT DEFAULT '',
             profile_icon TEXT DEFAULT '🧸',
+            status_message TEXT DEFAULT '',
             theme TEXT DEFAULT '포근함',
             main_color TEXT DEFAULT '#DDA15E',
             sub_color TEXT DEFAULT '#BC6C25',
@@ -166,6 +167,7 @@ def init_db():
             friend_username TEXT,
             friend_nickname TEXT,
             friend_icon TEXT,
+            friend_status TEXT,
             FOREIGN KEY (username) REFERENCES users(username)
         )
     ''')
@@ -174,6 +176,7 @@ def init_db():
         ("users", "nickname TEXT DEFAULT ''"),
         ("users", "birthdate TEXT DEFAULT ''"),
         ("users", "profile_icon TEXT DEFAULT '🧸'"),
+        ("users", "status_message TEXT DEFAULT ''"),
         ("users", "theme TEXT DEFAULT '포근함'"),
         ("users", "main_color TEXT DEFAULT '#DDA15E'"),
         ("users", "sub_color TEXT DEFAULT '#BC6C25'"),
@@ -185,7 +188,8 @@ def init_db():
         ("diaries", "allow_friends TEXT DEFAULT ''"),
         ("diaries", "views INTEGER DEFAULT 0"),
         ("exchange_diaries", "is_public INTEGER DEFAULT 0"),
-        ("exchange_diaries", "views INTEGER DEFAULT 0")
+        ("exchange_diaries", "views INTEGER DEFAULT 0"),
+        ("friendships", "friend_status TEXT DEFAULT ''")
     ]
     for tbl, col in cols:
         try:
@@ -206,8 +210,8 @@ def register_user(username, password, nickname, birthdate=""):
     code = generate_invite_code()
     try:
         c.execute('''
-            INSERT INTO users (username, password, nickname, birthdate, profile_icon, theme, main_color, sub_color, invite_code) 
-            VALUES (?, ?, ?, ?, '🧸', '포근함', '#DDA15E', '#BC6C25', ?)
+            INSERT INTO users (username, password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color, invite_code) 
+            VALUES (?, ?, ?, ?, '🧸', '', '포근함', '#DDA15E', '#BC6C25', ?)
         ''', (username, hashed_pw, nickname, birthdate, code))
         conn.commit()
         push_db_to_github("New user registered")
@@ -220,24 +224,32 @@ def register_user(username, password, nickname, birthdate=""):
 def login_user(username, password):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password, nickname, birthdate, profile_icon, theme, main_color, sub_color, invite_code, exchange_id, exchange_type, exchange_start_date FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color, invite_code, exchange_id, exchange_type, exchange_start_date FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
         stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
-            inv_code = row[7] if row[7] else generate_invite_code()
-            return True, row[1], row[2], (row[3] or '🧸'), (row[4] or '포근함'), (row[5] or '#DDA15E'), (row[6] or '#BC6C25'), inv_code, row[8], row[9], row[10]
-    return False, None, None, '🧸', '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
+            inv_code = row[8] if row[8] else generate_invite_code()
+            return True, row[1], row[2], (row[3] or '🧸'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25'), inv_code, row[9], row[10], row[11]
+    return False, None, None, '🧸', '', '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
 
-def update_user_info(username, new_nickname, new_birthdate, new_profile_icon):
+def update_user_info(username, new_nickname, new_birthdate, new_profile_icon, new_status_message):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
         UPDATE users 
-        SET nickname = ?, birthdate = ?, profile_icon = ? 
+        SET nickname = ?, birthdate = ?, profile_icon = ?, status_message = ? 
         WHERE username = ?
-    ''', (new_nickname, new_birthdate, new_profile_icon, username))
+    ''', (new_nickname, new_birthdate, new_profile_icon, new_status_message, username))
+    
+    # 내 정보 변경 시 친구 목록에 저장된 내 정보(닉네임, 이모티콘, 상태메시지)도 동기화 갱신
+    c.execute('''
+        UPDATE friendships 
+        SET friend_nickname = ?, friend_icon = ?, friend_status = ? 
+        WHERE friend_username = ?
+    ''', (new_nickname, new_profile_icon, new_status_message, username))
+    
     conn.commit()
     conn.close()
     push_db_to_github(f"Update info for user {username}")
@@ -279,41 +291,57 @@ def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str)
     push_db_to_github("Exchange connected")
     return True, eid
 
-def add_friend_by_code(my_username, friend_code):
+def add_friend_by_code(my_username, my_nickname, my_icon, my_status, friend_code):
     conn = get_connection()
     c = conn.cursor()
     cleaned_code = friend_code.strip().upper()
-    c.execute("SELECT username, nickname, profile_icon FROM users WHERE UPPER(invite_code) = ?", (cleaned_code,))
+    c.execute("SELECT username, nickname, profile_icon, status_message FROM users WHERE UPPER(invite_code) = ?", (cleaned_code,))
     friend = c.fetchone()
     
     if not friend:
         conn.close()
         return False, "존재하지 않는 초대코드입니다."
     
-    f_username, f_nickname, f_icon = friend[0], friend[1], (friend[2] or '🧸')
+    f_username, f_nickname, f_icon, f_status = friend[0], friend[1], (friend[2] or '🧸'), (friend[3] or '')
     if f_username == my_username:
         conn.close()
         return False, "자신의 초대코드는 입력할 수 없습니다."
 
+    # 이미 친구인지 확인
     c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (my_username, f_username))
     if c.fetchone():
         conn.close()
         return False, "이미 친구로 등록된 사용자입니다."
 
-    c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon) VALUES (?, ?, ?, ?)",
-              (my_username, f_username, f_nickname, f_icon))
+    # 내 프로필 조회 (상대방 입장에서 저장할 내 정보)
+    c.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (my_username,))
+    my_info = c.fetchone()
+    my_cur_nick = my_info[0] if my_info else my_nickname
+    my_cur_icon = my_info[1] if my_info else my_icon
+    my_cur_status = my_info[2] if my_info else my_status
+
+    # 1. 나에게 친구 추가
+    c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
+              (my_username, f_username, f_nickname, f_icon, f_status))
+    
+    # 2. 상대방에게도 나를 친구 추가 (상호 양방향 추가)
+    c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (f_username, my_username))
+    if not c.fetchone():
+        c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
+                  (f_username, my_username, my_cur_nick, my_cur_icon, my_cur_status))
+
     conn.commit()
     conn.close()
-    push_db_to_github("Friend added")
-    return True, "친구가 성공적으로 추가되었습니다!"
+    push_db_to_github("Mutual friend added")
+    return True, f"'{f_nickname}'님과 상호 친구가 되었습니다!"
 
 def get_user_friends(username):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT id, friend_username, friend_nickname, friend_icon FROM friendships WHERE username = ?", (username,))
+    c.execute("SELECT id, friend_username, friend_nickname, friend_icon, friend_status FROM friendships WHERE username = ?", (username,))
     rows = c.fetchall()
     conn.close()
-    return [{"id": r[0], "friend_username": r[1], "friend_nickname": r[2], "friend_icon": r[3]} for r in rows]
+    return [{"id": r[0], "friend_username": r[1], "friend_nickname": r[2], "friend_icon": r[3], "friend_status": r[4]} for r in rows]
 
 def delete_friend(friendship_id):
     conn = get_connection()
@@ -623,6 +651,8 @@ if "birthdate" not in st.session_state:
     st.session_state.birthdate = None
 if "profile_icon" not in st.session_state:
     st.session_state.profile_icon = "🧸"
+if "status_message" not in st.session_state:
+    st.session_state.status_message = ""
 if "theme" not in st.session_state:
     st.session_state.theme = "👁️‍🗨️ 드림코어"
 if "main_color" not in st.session_state:
@@ -796,12 +826,13 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname, birthdate, profile_icon, theme, m_color, s_color, inv_code, e_id, e_type, e_sdate = login_user(username_input, password_input)
+                is_success, nickname, birthdate, profile_icon, status_message, theme, m_color, s_color, inv_code, e_id, e_type, e_sdate = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
                     st.session_state.birthdate = birthdate
                     st.session_state.profile_icon = profile_icon if profile_icon else "🧸"
+                    st.session_state.status_message = status_message if status_message else ""
                     st.session_state.theme = theme
                     st.session_state.main_color = m_color
                     st.session_state.sub_color = s_color
@@ -848,6 +879,7 @@ else:
     current_nickname = st.session_state.nickname
     user_birthdate = st.session_state.birthdate
     current_profile_icon = st.session_state.profile_icon if st.session_state.profile_icon else "🧸"
+    current_status_message = st.session_state.status_message if st.session_state.status_message else ""
     
     if user_birthdate and len(user_birthdate) == 10:
         if user_birthdate[5:] == today_str[5:]:
@@ -856,6 +888,8 @@ else:
 
     st.sidebar.title(app_title.split()[0] + " 일기장")
     st.sidebar.markdown(f"### {current_profile_icon} **{current_nickname}** 님")
+    if current_status_message:
+        st.sidebar.caption(f"💬 *{current_status_message}*")
     st.sidebar.info(f"내 초대코드: **{st.session_state.invite_code}**")
     
     if st.session_state.exchange_id and st.session_state.exchange_start_date:
@@ -875,8 +909,9 @@ else:
     
     # 1. 내 메뉴 (정보설정 & 테마관리)
     st.sidebar.markdown("### 👤 내 메뉴")
-    with st.sidebar.expander("⚙️ 정보설정 (프로필)"):
+    with st.sidebar.expander("⚙️ 정보설정 (프로필 개성꾸미기)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
+        edit_status = st.text_input("한 줄 소개 (상태메시지)", value=current_status_message, placeholder="나를 표현하는 한마디 🌟", key="edit_status_input")
         
         st.write("프로필 이모티콘 선택:")
         cols_emoji = st.columns(4)
@@ -913,11 +948,12 @@ else:
         if st.button("프로필 변경 저장", use_container_width=True):
             cleaned_nick = edit_nick.strip()
             if cleaned_nick:
-                update_user_info(current_user, cleaned_nick, new_bday_str, selected_icon)
+                update_user_info(current_user, cleaned_nick, new_bday_str, selected_icon, edit_status.strip())
                 st.session_state.nickname = cleaned_nick
                 st.session_state.birthdate = new_bday_str
                 st.session_state.profile_icon = selected_icon
-                st.success("프로필 정보가 수정되었습니다!")
+                st.session_state.status_message = edit_status.strip()
+                st.success("프로필이 개성 있게 수정되었습니다!")
                 st.rerun()
 
     with st.sidebar.expander("🎨 테마관리 (분위기 & 색상)"):
@@ -995,7 +1031,7 @@ else:
         friend_code_input = st.text_input("친구 초대코드 입력")
         if st.button("친구 추가하기", use_container_width=True):
             if friend_code_input.strip():
-                ok, msg = add_friend_by_code(current_user, friend_code_input.strip().upper())
+                ok, msg = add_friend_by_code(current_user, current_nickname, current_profile_icon, current_status_message, friend_code_input.strip().upper())
                 if ok:
                     st.success(msg)
                     st.rerun()
@@ -1009,7 +1045,9 @@ else:
         if friends:
             for f in friends:
                 fc1, fc2 = st.columns([4, 1])
-                with fc1: st.write(f"{f['friend_icon']} {f['friend_nickname']}")
+                with fc1:
+                    status_text = f" - *{f['friend_status']}*" if f.get('friend_status') else ""
+                    st.write(f"{f['friend_icon']} **{f['friend_nickname']}**{status_text}")
                 with fc2:
                     if st.button("삭제", key=f"del_f_{f['id']}"):
                         delete_friend(f['id'])
