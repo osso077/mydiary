@@ -85,7 +85,7 @@ def init_db():
             password TEXT NOT NULL,
             nickname TEXT NOT NULL,
             birthdate TEXT DEFAULT '',
-            profile_icon TEXT DEFAULT '🧸',
+            profile_icon TEXT DEFAULT '곰돌이',
             status_message TEXT DEFAULT '',
             theme TEXT DEFAULT '포근함',
             main_color TEXT DEFAULT '#DDA15E',
@@ -175,7 +175,7 @@ def init_db():
     cols = [
         ("users", "nickname TEXT DEFAULT ''"),
         ("users", "birthdate TEXT DEFAULT ''"),
-        ("users", "profile_icon TEXT DEFAULT '🧸'"),
+        ("users", "profile_icon TEXT DEFAULT '곰돌이'"),
         ("users", "status_message TEXT DEFAULT ''"),
         ("users", "theme TEXT DEFAULT '포근함'"),
         ("users", "main_color TEXT DEFAULT '#DDA15E'"),
@@ -211,7 +211,7 @@ def register_user(username, password, nickname, birthdate=""):
     try:
         c.execute('''
             INSERT INTO users (username, password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color, invite_code) 
-            VALUES (?, ?, ?, ?, '\U0001F9F8', '', '포근함', '#DDA15E', '#BC6C25', ?)
+            VALUES (?, ?, ?, ?, '곰돌이', '', '포근함', '#DDA15E', '#BC6C25', ?)
         ''', (username, hashed_pw, nickname, birthdate, code))
         conn.commit()
         push_db_to_github("New user registered")
@@ -231,8 +231,8 @@ def login_user(username, password):
         stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
             inv_code = row[8] if row[8] else generate_invite_code()
-            return True, row[1], row[2], (row[3] or '\U0001F9F8'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25'), inv_code, row[9], row[10], row[11]
-    return False, None, None, '\U0001F9F8', '', '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
+            return True, row[1], row[2], (row[3] or '곰돌이'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25'), inv_code, row[9], row[10], row[11]
+    return False, None, None, '곰돌이', '', '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
 
 def update_user_info(username, new_nickname, new_birthdate, new_profile_icon, new_status_message):
     conn = get_connection()
@@ -301,7 +301,7 @@ def add_friend_by_code(my_username, my_nickname, my_icon, my_status, friend_code
         conn.close()
         return False, "존재하지 않는 초대코드입니다."
     
-    f_username, f_nickname, f_icon, f_status = friend[0], friend[1], (friend[2] or '\U0001F9F8'), (friend[3] or '')
+    f_username, f_nickname, f_icon, f_status = friend[0], friend[1], (friend[2] or '곰돌이'), (friend[3] or '')
     if f_username == my_username:
         conn.close()
         return False, "자신의 초대코드는 입력할 수 없습니다."
@@ -397,7 +397,7 @@ def get_all_public_diaries(current_user):
         JOIN users u ON d.username = u.username
         WHERE d.is_public = 1 OR d.allow_friends LIKE ?
         UNION ALL
-        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '\U0001F9F8') AS profile_icon, ed.is_public, '' AS allow_friends
+        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '곰돌이') AS profile_icon, ed.is_public, '' AS allow_friends
         FROM exchange_diaries ed
         LEFT JOIN users u ON ed.username = u.username
         WHERE ed.is_public = 1
@@ -413,7 +413,7 @@ def get_all_public_diaries(current_user):
         if is_pub == 1 or current_user == r[4] or current_user in [x.strip() for x in allow_str.split(",") if x.strip()]:
             public_list.append({
                 "date": r[0], "emotion": r[1], "content": r[2], 
-                "nickname": r[3], "username": r[4], "views": r[5], "type": r[6], "profile_icon": r[7] if r[7] else '\U0001F9F8'
+                "nickname": r[3], "username": r[4], "views": r[5], "type": r[6], "profile_icon": r[7] if r[7] else '곰돌이'
             })
     return public_list
 
@@ -544,7 +544,7 @@ def delete_comment(comment_id):
 # =========================================================
 # 2. UI 및 테마 설정 (11종)
 # =========================================================
-st.set_page_config(page_title="소소한 일기장", page_icon="🧸", layout="centered")
+st.set_page_config(page_title="소소한 일기장", page_icon="⭐", layout="centered")
 
 THEME_STYLES = {
     "👁️‍🗨️ 드림코어": {
@@ -645,7 +645,7 @@ if "nickname" not in st.session_state:
 if "birthdate" not in st.session_state:
     st.session_state.birthdate = None
 if "profile_icon" not in st.session_state:
-    st.session_state.profile_icon = "🧸"
+    st.session_state.profile_icon = "곰돌이"
 if "status_message" not in st.session_state:
     st.session_state.status_message = ""
 if "theme" not in st.session_state:
@@ -804,14 +804,29 @@ if "page" not in st.session_state:
 
 STANDARD_EMOTIONS = ["👁️‍🗨️ 몽환", "😊 기쁨", "😌 평온", "😢 슬픔", "😡 화남", "😴 피곤", "🥰 사랑"]
 EMOJI_LIST = [e.split()[0] for e in STANDARD_EMOTIONS]
-PROFILE_EMOJIS = ["🧸", "✨", "🐰", "🌸", "🍓", "🐥", "🌙", "⭐", "🍀", "🎀", "🐱", "🐶"]
+
+# 이모티콘 글자 깨짐 방지를 위해 이름/상징 조합형 프로필 선택지 구성
+PROFILE_ICONS = [
+    ("곰돌이", "🧸 곰돌이"), 
+    ("별빛", "⭐ 별빛"), 
+    ("토끼", "🐰 토끼"), 
+    ("꽃", "🌸 꽃"), 
+    ("딸기", "🍓 딸기"), 
+    ("병아리", "🐥 병아리"), 
+    ("달님", "🌙 달님"), 
+    ("행운", "🍀 행운"), 
+    ("리본", "🎀 리본"), 
+    ("고양이", "🐱 고양이"), 
+    ("강아지", "🐶 강아지"), 
+    ("다이아", "💎 다이아")
+]
 
 
 # =========================================================
 # 3. 로그인 / 회원가입 화면
 # =========================================================
 if st.session_state.user is None:
-    st.title("🧸 소소하고 포근한 일기장")
+    st.title("⭐ 소소하고 포근한 일기장")
     
     auth_mode = st.radio("서비스 이용을 위해 로그인해 주세요.", ["로그인", "회원가입"], horizontal=True)
     
@@ -826,7 +841,7 @@ if st.session_state.user is None:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
                     st.session_state.birthdate = birthdate
-                    st.session_state.profile_icon = profile_icon if profile_icon else "🧸"
+                    st.session_state.profile_icon = profile_icon if profile_icon else "곰돌이"
                     st.session_state.status_message = status_message if status_message else ""
                     st.session_state.theme = theme
                     st.session_state.main_color = m_color
@@ -873,7 +888,7 @@ else:
     current_user = st.session_state.user
     current_nickname = st.session_state.nickname
     user_birthdate = st.session_state.birthdate
-    current_profile_icon = st.session_state.profile_icon if st.session_state.profile_icon else "🧸"
+    current_profile_icon = st.session_state.profile_icon if st.session_state.profile_icon else "곰돌이"
     current_status_message = st.session_state.status_message if st.session_state.status_message else ""
     
     if user_birthdate and len(user_birthdate) == 10:
@@ -908,17 +923,17 @@ else:
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         edit_status = st.text_input("한 줄 소개 (상태메시지)", value=current_status_message, placeholder="나를 표현하는 한마디 🌟", key="edit_status_input")
         
-        st.write("프로필 이모티콘 선택:")
-        cols_emoji = st.columns(4)
+        st.write("프로필 아이콘 선택:")
+        cols_emoji = st.columns(3)
         selected_icon = current_profile_icon
-        for idx, emo in enumerate(PROFILE_EMOJIS):
-            col_idx = idx % 4
+        for idx, (icon_key, icon_label) in enumerate(PROFILE_ICONS):
+            col_idx = idx % 3
             with cols_emoji[col_idx]:
-                btn_label = f"✨ {emo}" if emo == current_profile_icon else emo
-                if st.button(btn_label, key=f"emo_btn_{emo}", use_container_width=True):
-                    selected_icon = emo
+                btn_label = f"✨ {icon_label}" if icon_key == current_profile_icon else icon_label
+                if st.button(btn_label, key=f"icon_btn_{icon_key}", use_container_width=True):
+                    selected_icon = icon_key
 
-        st.caption(f"현재 선택된 이모티콘: **{selected_icon}**")
+        st.caption(f"현재 선택된 아이콘: **{selected_icon}**")
         
         has_bday = bool(user_birthdate)
         update_bday = st.checkbox("생년월일 설정/수정", value=has_bday)
@@ -1042,7 +1057,7 @@ else:
                 fc1, fc2 = st.columns([4, 1])
                 with fc1:
                     status_text = f" - *{f['friend_status']}*" if f.get('friend_status') else ""
-                    st.write(f"{f['friend_icon']} **{f['friend_nickname']}**{status_text}")
+                    st.write(f"[{f['friend_icon']}] **{f['friend_nickname']}**{status_text}")
                 with fc2:
                     if st.button("삭제", key=f"del_f_{f['id']}"):
                         delete_friend(f['id'])
@@ -1307,8 +1322,8 @@ else:
                     increment_public_views(item['username'], item['date'], item['type'], current_user)
                     
                     with st.container():
-                        p_icon = item['profile_icon'] if item['profile_icon'] else '\U0001F9F8'
-                        header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
+                        p_icon = item['profile_icon'] if item['profile_icon'] else '곰돌이'
+                        header_title = f"[{p_icon}] {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
 
                         st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
                         st.info(item['content'])
@@ -1369,7 +1384,7 @@ else:
                 st.write("일기를 공유할 친구를 선택해 주세요:")
                 for f in friends:
                     is_checked = f['friend_username'] in existing_allow_list
-                    if st.checkbox(f"{f['friend_icon']} {f['friend_nickname']}", value=is_checked, key=f"chk_friend_{f['friend_username']} {s_date}"):
+                    if st.checkbox(f"[{f['friend_icon']}] {f['friend_nickname']}", value=is_checked, key=f"chk_friend_{f['friend_username']} {s_date}"):
                         selected_allow_friends.append(f['friend_username'])
             else:
                 st.info("등록된 친구가 없습니다. 사이드바 '친구기능'에서 친구를 먼저 추가해 주세요!")
