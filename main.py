@@ -61,6 +61,14 @@ sync_db_from_github()
 # =========================================================
 # 1. DB 연동 및 테이블 생성 / 마이그레이션
 # =========================================================
+SCHEDULE_CATEGORIES = {
+    "📖 공부/업무": "#3B82F6",  # 파랑
+    "🤝 약속/모임": "#10B981",  # 초록
+    "🎉 기념일/행사": "#EC4899", # 분홍
+    "🏃 운동/건강": "#F97316",  # 주황
+    "📌 기타/개인": "#8B5CF6"   # 보라
+}
+
 def get_connection():
     return sqlite3.connect(DB_FILE, check_same_thread=False)
 
@@ -122,6 +130,19 @@ def init_db():
             content TEXT,
             created_at TEXT,
             FOREIGN KEY (diary_username, diary_date) REFERENCES diaries(username, date)
+        )
+    ''')
+
+    # 일정/스케줄 테이블 추가
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS schedules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            date TEXT,
+            title TEXT,
+            category TEXT,
+            color TEXT,
+            FOREIGN KEY (username) REFERENCES users(username)
         )
     ''')
 
@@ -316,6 +337,35 @@ def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, cont
     conn.commit()
     conn.close()
     push_db_to_github(f"Update exchange diary for {date_str}")
+
+# --- 일정 관련 DB 헬퍼 함수 ---
+def add_schedule(username, date_str, title, category):
+    color = SCHEDULE_CATEGORIES.get(category, "#8B5CF6")
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO schedules (username, date, title, category, color)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (username, date_str, title, category, color))
+    conn.commit()
+    conn.close()
+    push_db_to_github("New schedule added")
+
+def get_user_schedules(username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, date, title, category, color FROM schedules WHERE username = ? ORDER BY date ASC", (username,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r[0], "date": r[1], "title": r[2], "category": r[3], "color": r[4]} for r in rows]
+
+def delete_schedule(schedule_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM schedules WHERE id = ?", (schedule_id,))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Schedule deleted")
 
 def add_comment(diary_username, diary_date, comment_username, comment_nickname, content):
     conn = get_connection()
@@ -677,7 +727,7 @@ else:
     current_nickname = st.session_state.nickname
     user_birthdate = st.session_state.birthdate
     
-    # 생일 당일 접속 시 축하 효과 발생 (매년 생일 반복 반영을 위해 월-일 비교)
+    # 생일 당일 축하 메시지
     if user_birthdate and len(user_birthdate) == 10:
         if user_birthdate[5:] == today_str[5:]:
             st.balloons()
@@ -765,11 +815,14 @@ else:
 
     st.sidebar.markdown("---")
     
-    menu_options = ["🔒 비밀일기", "💌 교환일기", "🌐 공개일기"]
+    menu_options = ["🔒 비밀일기", "📅 일정 관리", "💌 교환일기", "🌐 공개일기"]
     nav_choice = st.sidebar.radio("메뉴 선택", menu_options)
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
         st.session_state.page = "secret_calendar"
+        st.rerun()
+    elif nav_choice == "📅 일정 관리" and st.session_state.page not in ["schedule_calendar", "schedule_editor"]:
+        st.session_state.page = "schedule_calendar"
         st.rerun()
     elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor", "exchange_setup"]:
         if st.session_state.exchange_id:
@@ -783,11 +836,11 @@ else:
 
     st.title(app_title)
 
-    # 공통 생일 이벤트 생성 헬퍼 (현재 연도에 맞게 생일 날짜 구성)
+    # 공통 생일 이벤트
     birthday_events = []
     if user_birthdate and len(user_birthdate) == 10:
         try:
-            b_month_day = user_birthdate[5:] # MM-DD
+            b_month_day = user_birthdate[5:]
             cur_year = today_dt.year
             b_date_current_year = f"{cur_year}-{b_month_day}"
             birthday_events.append({
@@ -805,7 +858,7 @@ else:
         st.header("🔒 나만의 비밀일기")
         secret_diaries = get_user_diaries(current_user, is_public_flag=False)
 
-        calendar_events = list(birthday_events) # 생일 일정 포함
+        calendar_events = list(birthday_events)
         for date_str, diary_data in secret_diaries.items():
             if diary_data.get("content") and diary_data["content"].strip():
                 calendar_events.append({
@@ -827,7 +880,80 @@ else:
             st.session_state.page = "secret_editor"
             st.rerun()
 
-    # PAGE 2-0: 💌 교환일기 연결 설정
+    # PAGE 2: 📅 일정 관리 달력
+    elif st.session_state.page == "schedule_calendar":
+        st.header("📅 나의 카테고리별 일정 관리")
+        schedules = get_user_schedules(current_user)
+
+        # 카테고리 범례(안내) 표시
+        legend_cols = st.columns(len(SCHEDULE_CATEGORIES))
+        for idx, (cat_name, cat_color) in enumerate(SCHEDULE_CATEGORIES.items()):
+            with legend_cols[idx]:
+                st.markdown(f"<span style='color:{cat_color}; font-weight:bold;'>■</span> <small>{cat_name.split()[1]}</small>", unsafe_allow_html=True)
+
+        calendar_events = list(birthday_events)
+        for s in schedules:
+            calendar_events.append({
+                "title": f"📌 [{s['category'].split()[1]}] {s['title']}",
+                "start": s['date'], "end": s['date'], "allDay": True,
+                "color": s['color']
+            })
+
+        cal_res_s = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"schedule_cal_{st.session_state.theme}_{main_color}_{sub_color}")
+
+        clicked_date_s = None
+        if cal_res_s and "dateClick" in cal_res_s:
+            clicked_date_s = cal_res_s["dateClick"]["date"].split("T")[0]
+        elif cal_res_s and "select" in cal_res_s:
+            clicked_date_s = cal_res_s["select"]["start"].split("T")[0]
+
+        if clicked_date_s:
+            st.session_state.selected_date = clicked_date_s
+            st.session_state.page = "schedule_editor"
+            st.rerun()
+
+    # PAGE 2-1: 📅 일정 작성/수정/삭제 화면
+    elif st.session_state.page == "schedule_editor":
+        s_date = st.session_state.selected_date
+        st.header(f"📅 일정 관리 ({s_date})")
+
+        # 해당 날짜 기존 일정 목록
+        all_schedules = get_user_schedules(current_user)
+        day_schedules = [s for s in all_schedules if s['date'] == s_date]
+
+        if day_schedules:
+            st.subheader("📋 이날의 기존 일정")
+            for sc in day_schedules:
+                col_info, col_del = st.columns([5, 1])
+                with col_info:
+                    st.markdown(f"<span style='color:{sc['color']}; font-weight:bold;'>■</span> **{sc['category']}** : {sc['title']}", unsafe_allow_html=True)
+                with col_del:
+                    if st.button("삭제", key=f"del_sc_{sc['id']}"):
+                        delete_schedule(sc['id'])
+                        st.success("일정이 삭제되었습니다.")
+                        st.rerun()
+            st.markdown("---")
+
+        st.subheader("➕ 새 일정 추가하기")
+        sc_title = st.text_input("일정 제목", placeholder="예: 친구 생일파티, 스터디 카페 가기")
+        sc_category = st.selectbox("일정 카테고리", list(SCHEDULE_CATEGORIES.keys()))
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("💾 일정 등록", use_container_width=True):
+                if sc_title.strip():
+                    add_schedule(current_user, s_date, sc_title.strip(), sc_category)
+                    st.success("일정이 등록되었습니다!")
+                    st.session_state.page = "schedule_calendar"
+                    st.rerun()
+                else:
+                    st.warning("일정 제목을 입력해 주세요.")
+        with col2:
+            if st.button("🗓️ 일정 달력으로 돌아가기", use_container_width=True):
+                st.session_state.page = "schedule_calendar"
+                st.rerun()
+
+    # PAGE 3-0: 💌 교환일기 연결 설정
     elif st.session_state.page == "exchange_setup":
         st.header("💌 소중한 사람과 교환일기 시작하기")
         st.write("소중한 친구나 연인의 초대코드를 입력하여 둘만의 교환일기를 시작해보세요!")
@@ -855,7 +981,7 @@ else:
             else:
                 st.warning("상대방의 초대코드를 입력해 주세요.")
 
-    # PAGE 2-1: 💌 교환일기 달력
+    # PAGE 3-1: 💌 교환일기 달력
     elif st.session_state.page == "exchange_calendar":
         st.header(f"💌 우리들의 소중한 교환일기 ({st.session_state.exchange_type})")
         ex_diaries = get_exchange_diaries(st.session_state.exchange_id)
@@ -883,14 +1009,14 @@ else:
             st.session_state.page = "exchange_editor"
             st.rerun()
 
-    # PAGE 3: 🌐 공개일기 달력 / 모아보기
+    # PAGE 4: 🌐 공개일기 달력 / 모아보기
     elif st.session_state.page == "public_calendar":
         st.header("🌐 공유하는 공개일기")
         tab1, tab2 = st.tabs(["🗓️ 내 공개일기 달력", "📖 모두의 이야기 모아보기"])
 
         with tab1:
             my_public_diaries = get_user_diaries(current_user, is_public_flag=True)
-            calendar_events = list(birthday_events) # 생일 일정 포함
+            calendar_events = list(birthday_events)
             for d, data in my_public_diaries.items():
                 if data.get("content"):
                     calendar_events.append({
@@ -939,7 +1065,7 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 4: 비밀/공개 일기 에디터
+    # PAGE 5: 비밀/공개 일기 에디터
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
@@ -975,7 +1101,7 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 5: 교환일기 에디터
+    # PAGE 6: 교환일기 에디터
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
         eid = st.session_state.exchange_id
