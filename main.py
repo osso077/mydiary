@@ -103,6 +103,7 @@ def init_db():
             emotion TEXT,
             content TEXT,
             is_public INTEGER DEFAULT 0,
+            allow_friends TEXT DEFAULT '',
             views INTEGER DEFAULT 0,
             PRIMARY KEY (username, date),
             FOREIGN KEY (username) REFERENCES users(username)
@@ -158,7 +159,6 @@ def init_db():
         )
     ''')
 
-    # 계정 간 친구 관계 테이블 추가
     c.execute('''
         CREATE TABLE IF NOT EXISTS friendships (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,6 +182,7 @@ def init_db():
         ("users", "exchange_type TEXT DEFAULT '연인'"),
         ("users", "exchange_start_date TEXT DEFAULT ''"),
         ("diaries", "is_public INTEGER DEFAULT 0"),
+        ("diaries", "allow_friends TEXT DEFAULT ''"),
         ("diaries", "views INTEGER DEFAULT 0"),
         ("exchange_diaries", "is_public INTEGER DEFAULT 0"),
         ("exchange_diaries", "views INTEGER DEFAULT 0")
@@ -292,7 +293,6 @@ def add_friend_by_code(my_username, friend_code):
         conn.close()
         return False, "자신의 초대코드는 입력할 수 없습니다."
 
-    # 이미 추가된 친구인지 확인
     c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (my_username, f_username))
     if c.fetchone():
         conn.close()
@@ -348,40 +348,51 @@ def delete_user_dday(dday_id):
 def get_user_diaries(username, is_public_flag):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT date, emotion, content FROM diaries WHERE username = ? AND is_public = ?", 
-              (username, 1 if is_public_flag else 0))
+    c.execute("SELECT date, emotion, content, is_public, allow_friends FROM diaries WHERE username = ?", (username,))
     rows = c.fetchall()
     conn.close()
     
     diaries = {}
     for r in rows:
-        diaries[r[0]] = {"emotion": r[1], "content": r[2]}
+        dt, em, ct, ip, af = r[0], r[1], r[2], r[3], r[4]
+        # is_public_flag가 True이면 공개(is_public == 1 또는 allow_friends에 값이 있는 경우)를 조회
+        if is_public_flag:
+            if ip == 1 or (af and len(af.strip()) > 0):
+                diaries[dt] = {"emotion": em, "content": ct, "is_public": ip, "allow_friends": af}
+        else:
+            if ip == 0 and (not af or len(af.strip()) == 0):
+                diaries[dt] = {"emotion": em, "content": ct, "is_public": ip, "allow_friends": af}
     return diaries
 
-def get_all_public_diaries():
+def get_all_public_diaries(current_user):
     conn = get_connection()
     c = conn.cursor()
+    # 전체 공개 일기 또는 내가 친구로 포함된 일기 가져오기
     c.execute('''
-        SELECT d.date, d.emotion, d.content, u.nickname, d.username, d.views, 'individual' AS type, u.profile_icon
+        SELECT d.date, d.emotion, d.content, u.nickname, d.username, d.views, 'individual' AS type, u.profile_icon, d.is_public, d.allow_friends
         FROM diaries d
         JOIN users u ON d.username = u.username
-        WHERE d.is_public = 1
+        WHERE d.is_public = 1 OR d.allow_friends LIKE ?
         UNION ALL
-        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '🧸') AS profile_icon
+        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '🧸') AS profile_icon, ed.is_public, '' AS allow_friends
         FROM exchange_diaries ed
         LEFT JOIN users u ON ed.username = u.username
         WHERE ed.is_public = 1
         ORDER BY date DESC
-    ''')
+    ''', (f"%{current_user}%",))
     rows = c.fetchall()
     conn.close()
     
     public_list = []
     for r in rows:
-        public_list.append({
-            "date": r[0], "emotion": r[1], "content": r[2], 
-            "nickname": r[3], "username": r[4], "views": r[5], "type": r[6], "profile_icon": r[7] if r[7] else '🧸'
-        })
+        # allow_friends에 내 username이 포함되어 있거나 전체 공개(is_public == 1)인 경우만 필터링
+        is_pub = r[8]
+        allow_str = r[9] if r[9] else ""
+        if is_pub == 1 or current_user == r[4] or current_user in [x.strip() for x in allow_str.split(",") if x.strip()]:
+            public_list.append({
+                "date": r[0], "emotion": r[1], "content": r[2], 
+                "nickname": r[3], "username": r[4], "views": r[5], "type": r[6], "profile_icon": r[7] if r[7] else '🧸'
+            })
     return public_list
 
 def increment_public_views(username, date_str, diary_type, current_user):
@@ -396,15 +407,15 @@ def increment_public_views(username, date_str, diary_type, current_user):
     conn.commit()
     conn.close()
 
-def save_diary(username, date_str, emotion, content, is_public):
+def save_diary(username, date_str, emotion, content, is_public, allow_friends):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO diaries (username, date, emotion, content, is_public)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO diaries (username, date, emotion, content, is_public, allow_friends)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(username, date) DO UPDATE SET
-            emotion=excluded.emotion, content=excluded.content, is_public=excluded.is_public
-    ''', (username, date_str, emotion, content, 1 if is_public else 0))
+            emotion=excluded.emotion, content=excluded.content, is_public=excluded.is_public, allow_friends=excluded.allow_friends
+    ''', (username, date_str, emotion, content, 1 if is_public else 0, allow_friends))
     conn.commit()
     conn.close()
     push_db_to_github(f"Update diary entry for {date_str}")
@@ -848,7 +859,6 @@ else:
     st.sidebar.markdown(f"### {current_profile_icon} **{current_nickname}** 님")
     st.sidebar.info(f"내 초대코드: **{st.session_state.invite_code}**")
     
-    # 교환일기 D-Day 표시
     if st.session_state.exchange_id and st.session_state.exchange_start_date:
         try:
             s_dt = datetime.datetime.strptime(st.session_state.exchange_start_date, "%Y-%m-%d").date()
@@ -859,9 +869,6 @@ else:
         except ValueError:
             pass
 
-    # =========================================================
-    # 주요 이벤트 (크리스마스, 새해) 및 커스텀 디데이 사이드바 표시
-    # =========================================================
     st.sidebar.markdown("---")
     st.sidebar.subheader("⏳ D-Day 알림판")
 
@@ -905,7 +912,6 @@ else:
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 1. 내 정보 프로필 관리 전용
     with st.sidebar.expander("✏️ 내 정보 관리 (프로필)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
@@ -951,7 +957,6 @@ else:
                 st.success("프로필 정보가 수정되었습니다!")
                 st.rerun()
 
-    # 나만의 디데이 추가 전용 서브 메뉴
     with st.sidebar.expander("⏰ 나만의 디데이 추가"):
         new_dday_title = st.text_input("디데이 제목", placeholder="예: 시험일, 여행 D-day")
         new_dday_date = st.date_input("목표 날짜", value=today_dt)
@@ -963,7 +968,6 @@ else:
             else:
                 st.warning("디데이 제목을 입력해 주세요.")
 
-    # 2. 테마 및 색상 설정 전용
     with st.sidebar.expander("🎨 테마 & 색상 설정"):
         theme_options = list(THEME_STYLES.keys())
         current_theme_idx = theme_options.index(st.session_state.theme) if st.session_state.theme in theme_options else 0
@@ -1020,7 +1024,6 @@ else:
 
     st.title(app_title)
 
-    # 공통 생일 이벤트
     birthday_events = []
     if user_birthdate and len(user_birthdate) == 10:
         try:
@@ -1253,7 +1256,7 @@ else:
                 st.rerun()
 
         with tab2:
-            all_publics = get_all_public_diaries()
+            all_publics = get_all_public_diaries(current_user)
             if all_publics:
                 for item in all_publics:
                     increment_public_views(item['username'], item['date'], item['type'], current_user)
@@ -1286,7 +1289,7 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 5: 비밀/공개 일기 에디터
+    # PAGE 5: 비밀/공개 일기 에디터 (친구 선택 공개 기능 추가)
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
@@ -1303,13 +1306,43 @@ else:
 
         txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=200)
 
+        # 공개 범위 상세 설정 (비밀일기 작성 시에도 친구 선택 공개 가능)
+        friends = get_user_friends(current_user)
+        friend_usernames = [f['friend_username'] for f in friends]
+        friend_map = {f['friend_username']: f['friend_nickname'] for f in friends}
+
+        existing_allow = ex_data.get("allow_friends", "") if "allow_friends" in ex_data else ""
+        existing_allow_list = [x.strip() for x in existing_allow.split(",") if x.strip()]
+
+        st.markdown("---")
+        st.subheader("🔒 공개 범위 설정")
+        pub_mode = st.radio(
+            "공개 대상을 선택하세요:",
+            ["🔒 나만 보기", "👥 선택한 친구에게만 공개", "🌐 전체 공개"],
+            index=2 if is_pub else (1 if existing_allow_list else 0)
+        )
+
+        selected_allow_friends = []
+        if pub_mode == "👥 선택한 친구에게만 공개":
+            if friends:
+                st.write("일기를 공유할 친구를 선택해 주세요:")
+                for f in friends:
+                    is_checked = f['friend_username'] in existing_allow_list
+                    if st.checkbox(f"{f['friend_icon']} {f['friend_nickname']}", value=is_checked, key=f"chk_friend_{f['friend_username']} {s_date}"):
+                        selected_allow_friends.append(f['friend_username'])
+            else:
+                st.info("등록된 친구가 없습니다. '친구 관리' 메뉴에서 친구를 먼저 추가해 주세요!")
+
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
             if st.button("💾 일기 저장", use_container_width=True):
                 if txt.strip():
-                    save_diary(current_user, s_date, sel_emoji, txt.strip(), is_pub)
+                    final_is_pub = 1 if pub_mode == "🌐 전체 공개" else 0
+                    final_allow_str = ",".join(selected_allow_friends) if pub_mode == "👥 선택한 친구에게만 공개" else ""
+                    
+                    save_diary(current_user, s_date, sel_emoji, txt.strip(), final_is_pub, final_allow_str)
                     st.success("일기가 저장되었습니다!")
-                    st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
+                    st.session_state.page = "public_calendar" if final_is_pub or final_allow_str else "secret_calendar"
                     st.rerun()
         with col2:
             if st.button("🗓️ 달력으로 돌아가기", use_container_width=True):
