@@ -148,6 +148,17 @@ def init_db():
         )
     ''')
 
+    # 사용자 커스텀 디데이 테이블 추가
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS user_ddays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            title TEXT,
+            target_date TEXT,
+            FOREIGN KEY (username) REFERENCES users(username)
+        )
+    ''')
+
     cols = [
         ("users", "nickname TEXT DEFAULT ''"),
         ("users", "birthdate TEXT DEFAULT ''"),
@@ -254,6 +265,30 @@ def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str)
     conn.close()
     push_db_to_github("Exchange connected")
     return True, eid
+
+def get_user_ddays(username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, title, target_date FROM user_ddays WHERE username = ? ORDER BY target_date ASC", (username,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r[0], "title": r[1], "target_date": r[2]} for r in rows]
+
+def add_user_dday(username, title, target_date):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("INSERT INTO user_ddays (username, title, target_date) VALUES (?, ?, ?)", (username, title, target_date))
+    conn.commit()
+    conn.close()
+    push_db_to_github("New custom dday added")
+
+def delete_user_dday(dday_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM user_ddays WHERE id = ?", (dday_id,))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Custom dday deleted")
 
 def get_user_diaries(username, is_public_flag):
     conn = get_connection()
@@ -768,14 +803,60 @@ else:
         except ValueError:
             pass
 
+    # =========================================================
+    # 주요 이벤트 (크리스마스, 새해) 및 커스텀 디데이 사이드바 표시
+    # =========================================================
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("⏳ D-Day 알림판")
+
+    cur_year = today_dt.year
+    events_to_check = [
+        ("🎄 크리스마스", datetime.date(cur_year, 12, 25)),
+        ("🎉 새해(신정)", datetime.date(cur_year + 1, 1, 1))
+    ]
+
+    # 주요 이벤트 (2주일 전부터 표시)
+    for ev_name, ev_date in events_to_check:
+        # 이미 지나갔으면 내년으로 계산
+        if ev_date < today_dt:
+            ev_date = datetime.date(cur_year + 1, ev_date.month, ev_date.day)
+        
+        diff = (ev_date - today_dt).days
+        if 0 <= diff <= 14:
+            d_label = "D-Day" if diff == 0 else f"D-{diff}"
+            st.sidebar.info(f"{ev_name}까지 **{d_label}** 남았습니다! 🎉")
+
+    # 사용자가 직접 등록한 커스텀 디데이 표시
+    user_ddays = get_user_ddays(current_user)
+    if user_ddays:
+        for ud in user_ddays:
+            try:
+                t_dt = datetime.datetime.strptime(ud['target_date'], "%Y-%m-%d").date()
+                diff = (t_dt - today_dt).days
+                if diff == 0:
+                    d_txt = "D-Day 🎉"
+                elif diff > 0:
+                    d_txt = f"D-{diff}"
+                else:
+                    d_txt = f"D+{abs(diff)}"
+                
+                col_d1, col_d2 = st.sidebar.columns([4, 1])
+                with col_d1:
+                    st.write(f"📌 **{ud['title']}**: {d_txt} ({ud['target_date']})")
+                with col_d2:
+                    if st.button("❌", key=f"del_ud_{ud['id']}"):
+                        delete_user_dday(ud['id'])
+                        st.rerun()
+            except Exception:
+                pass
+
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 1. 내 정보 프로필 관리 전용 (이모티콘 선택 버튼 방식)
+    # 1. 내 정보 프로필 관리 전용
     with st.sidebar.expander("✏️ 내 정보 관리 (프로필)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
         
         st.write("프로필 이모티콘 선택:")
-        # 이모티콘 칩 그리드 생성 (4열)
         cols_emoji = st.columns(4)
         selected_icon = current_profile_icon
         for idx, emo in enumerate(PROFILE_EMOJIS):
@@ -816,6 +897,18 @@ else:
                 st.session_state.profile_icon = selected_icon
                 st.success("프로필 정보가 수정되었습니다!")
                 st.rerun()
+
+    # 나만의 디데이 추가 전용 서브 메뉴
+    with st.sidebar.expander("⏰ 나만의 디데이 추가"):
+        new_dday_title = st.text_input("디데이 제목", placeholder="예: 시험일, 여행 D-day")
+        new_dday_date = st.date_input("목표 날짜", value=today_dt)
+        if st.button("디데이 등록하기", use_container_width=True):
+            if new_dday_title.strip():
+                add_user_dday(current_user, new_dday_title.strip(), new_dday_date.strftime("%Y-%m-%d"))
+                st.success("디데이가 추가되었습니다!")
+                st.rerun()
+            else:
+                st.warning("디데이 제목을 입력해 주세요.")
 
     # 2. 테마 및 색상 설정 전용
     with st.sidebar.expander("🎨 테마 & 색상 설정"):
