@@ -257,7 +257,8 @@ def update_user_theme(username, new_theme, new_main_color, new_sub_color):
 def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT username FROM users WHERE invite_code = ?", (partner_code,))
+    cleaned_code = partner_code.strip().upper()
+    c.execute("SELECT username FROM users WHERE UPPER(invite_code) = ?", (cleaned_code,))
     partner = c.fetchone()
     
     if not partner:
@@ -281,7 +282,8 @@ def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str)
 def add_friend_by_code(my_username, friend_code):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT username, nickname, profile_icon FROM users WHERE invite_code = ?", (friend_code,))
+    cleaned_code = friend_code.strip().upper()
+    c.execute("SELECT username, nickname, profile_icon FROM users WHERE UPPER(invite_code) = ?", (cleaned_code,))
     friend = c.fetchone()
     
     if not friend:
