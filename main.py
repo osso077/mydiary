@@ -243,7 +243,6 @@ def update_user_info(username, new_nickname, new_birthdate, new_profile_icon, ne
         WHERE username = ?
     ''', (new_nickname, new_birthdate, new_profile_icon, new_status_message, username))
     
-    # 나를 친구로 추가한 다른 사람들의 친구 목록에서도 내 아이콘, 닉네임, 상태메시지 업데이트
     c.execute('''
         UPDATE friendships 
         SET friend_nickname = ?, friend_icon = ?, friend_status = ? 
@@ -917,9 +916,10 @@ else:
             with cols_emoji[col_idx]:
                 btn_label = f"✨ {emo}" if emo == current_profile_icon else emo
                 if st.button(btn_label, key=f"emo_btn_{emo}", use_container_width=True):
-                    selected_icon = emo
+                    st.session_state.profile_icon = emo
+                    st.rerun()
 
-        st.caption(f"현재 선택된 이모티콘: **{selected_icon}**")
+        st.caption(f"현재 선택된 이모티콘: **{current_profile_icon}**")
         
         has_bday = bool(user_birthdate)
         update_bday = st.checkbox("생년월일 설정/수정", value=has_bday)
@@ -944,10 +944,9 @@ else:
         if st.button("프로필 변경 저장", use_container_width=True):
             cleaned_nick = edit_nick.strip()
             if cleaned_nick:
-                update_user_info(current_user, cleaned_nick, new_bday_str, selected_icon, edit_status.strip())
+                update_user_info(current_user, cleaned_nick, new_bday_str, current_profile_icon, edit_status.strip())
                 st.session_state.nickname = cleaned_nick
                 st.session_state.birthdate = new_bday_str
-                st.session_state.profile_icon = selected_icon
                 st.session_state.status_message = edit_status.strip()
                 st.success("프로필이 개성 있게 수정되었습니다!")
                 st.rerun()
