@@ -769,10 +769,10 @@ else:
 
     st.sidebar.caption(f"🎨 테마: {st.session_state.theme}")
     
-    # 1. 내 정보 프로필 관리 전용 (프로필 사진 변경 추가)
+    # 1. 내 정보 프로필 관리 전용 (이모티콘 전용 프로필 설정)
     with st.sidebar.expander("✏️ 내 정보 관리 (프로필)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
-        edit_icon = st.text_input("프로필 사진/아이디 (이모지 또는 이미지 URL)", value=current_profile_icon, key="edit_icon_input")
+        edit_icon = st.text_input("프로필 이모티콘 (예: 🧸, ✨, 🐰 등)", value=current_profile_icon, max_chars=4, key="edit_icon_input")
         
         has_bday = bool(user_birthdate)
         update_bday = st.checkbox("생년월일 설정/수정", value=has_bday)
@@ -1065,11 +1065,7 @@ else:
                     
                     with st.container():
                         p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
-                        # 이미지 URL인 경우와 이모지인 경우 분기 처리
-                        if p_icon.startswith("http://") or p_icon.startswith("https://"):
-                            header_title = f"<img src='{p_icon}' width='24' style='border-radius: 50%; vertical-align: middle;'> {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
-                        else:
-                            header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
+                        header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
 
                         st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
                         st.info(item['content'])
