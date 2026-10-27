@@ -211,7 +211,7 @@ def register_user(username, password, nickname, birthdate=""):
     try:
         c.execute('''
             INSERT INTO users (username, password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color, invite_code) 
-            VALUES (?, ?, ?, ?, '🧸', '', '포근함', '#DDA15E', '#BC6C25', ?)
+            VALUES (?, ?, ?, ?, '\U0001F9F8', '', '포근함', '#DDA15E', '#BC6C25', ?)
         ''', (username, hashed_pw, nickname, birthdate, code))
         conn.commit()
         push_db_to_github("New user registered")
@@ -231,8 +231,8 @@ def login_user(username, password):
         stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
             inv_code = row[8] if row[8] else generate_invite_code()
-            return True, row[1], row[2], (row[3] or '🧸'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25'), inv_code, row[9], row[10], row[11]
-    return False, None, None, '🧸', '', '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
+            return True, row[1], row[2], (row[3] or '\U0001F9F8'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25'), inv_code, row[9], row[10], row[11]
+    return False, None, None, '\U0001F9F8', '', '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
 
 def update_user_info(username, new_nickname, new_birthdate, new_profile_icon, new_status_message):
     conn = get_connection()
@@ -243,7 +243,6 @@ def update_user_info(username, new_nickname, new_birthdate, new_profile_icon, ne
         WHERE username = ?
     ''', (new_nickname, new_birthdate, new_profile_icon, new_status_message, username))
     
-    # 내 정보 변경 시 친구 목록에 저장된 내 정보(닉네임, 이모티콘, 상태메시지)도 동기화 갱신
     c.execute('''
         UPDATE friendships 
         SET friend_nickname = ?, friend_icon = ?, friend_status = ? 
@@ -302,29 +301,25 @@ def add_friend_by_code(my_username, my_nickname, my_icon, my_status, friend_code
         conn.close()
         return False, "존재하지 않는 초대코드입니다."
     
-    f_username, f_nickname, f_icon, f_status = friend[0], friend[1], (friend[2] or '🧸'), (friend[3] or '')
+    f_username, f_nickname, f_icon, f_status = friend[0], friend[1], (friend[2] or '\U0001F9F8'), (friend[3] or '')
     if f_username == my_username:
         conn.close()
         return False, "자신의 초대코드는 입력할 수 없습니다."
 
-    # 이미 친구인지 확인
     c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (my_username, f_username))
     if c.fetchone():
         conn.close()
         return False, "이미 친구로 등록된 사용자입니다."
 
-    # 내 프로필 조회 (상대방 입장에서 저장할 내 정보)
     c.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (my_username,))
     my_info = c.fetchone()
     my_cur_nick = my_info[0] if my_info else my_nickname
     my_cur_icon = my_info[1] if my_info else my_icon
     my_cur_status = my_info[2] if my_info else my_status
 
-    # 1. 나에게 친구 추가
     c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
               (my_username, f_username, f_nickname, f_icon, f_status))
     
-    # 2. 상대방에게도 나를 친구 추가 (상호 양방향 추가)
     c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (f_username, my_username))
     if not c.fetchone():
         c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
@@ -402,7 +397,7 @@ def get_all_public_diaries(current_user):
         JOIN users u ON d.username = u.username
         WHERE d.is_public = 1 OR d.allow_friends LIKE ?
         UNION ALL
-        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '🧸') AS profile_icon, ed.is_public, '' AS allow_friends
+        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '\U0001F9F8') AS profile_icon, ed.is_public, '' AS allow_friends
         FROM exchange_diaries ed
         LEFT JOIN users u ON ed.username = u.username
         WHERE ed.is_public = 1
@@ -418,7 +413,7 @@ def get_all_public_diaries(current_user):
         if is_pub == 1 or current_user == r[4] or current_user in [x.strip() for x in allow_str.split(",") if x.strip()]:
             public_list.append({
                 "date": r[0], "emotion": r[1], "content": r[2], 
-                "nickname": r[3], "username": r[4], "views": r[5], "type": r[6], "profile_icon": r[7] if r[7] else '🧸'
+                "nickname": r[3], "username": r[4], "views": r[5], "type": r[6], "profile_icon": r[7] if r[7] else '\U0001F9F8'
             })
     return public_list
 
@@ -1312,7 +1307,7 @@ else:
                     increment_public_views(item['username'], item['date'], item['type'], current_user)
                     
                     with st.container():
-                        p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
+                        p_icon = item['profile_icon'] if item['profile_icon'] else '\U0001F9F8'
                         header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
 
                         st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
