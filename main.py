@@ -677,6 +677,7 @@ else:
     current_nickname = st.session_state.nickname
     user_birthdate = st.session_state.birthdate
     
+    # 생일 당일 접속 시 축하 효과 발생 (매년 생일 반복 반영을 위해 월-일 비교)
     if user_birthdate and len(user_birthdate) == 10:
         if user_birthdate[5:] == today_str[5:]:
             st.balloons()
@@ -782,12 +783,29 @@ else:
 
     st.title(app_title)
 
+    # 공통 생일 이벤트 생성 헬퍼 (현재 연도에 맞게 생일 날짜 구성)
+    birthday_events = []
+    if user_birthdate and len(user_birthdate) == 10:
+        try:
+            b_month_day = user_birthdate[5:] # MM-DD
+            cur_year = today_dt.year
+            b_date_current_year = f"{cur_year}-{b_month_day}"
+            birthday_events.append({
+                "title": "🎂 내 생일! 🎉",
+                "start": b_date_current_year,
+                "end": b_date_current_year,
+                "allDay": True,
+                "color": sub_color
+            })
+        except Exception:
+            pass
+
     # PAGE 1: 🔒 비밀일기 달력
     if st.session_state.page == "secret_calendar":
         st.header("🔒 나만의 비밀일기")
         secret_diaries = get_user_diaries(current_user, is_public_flag=False)
 
-        calendar_events = []
+        calendar_events = list(birthday_events) # 생일 일정 포함
         for date_str, diary_data in secret_diaries.items():
             if diary_data.get("content") and diary_data["content"].strip():
                 calendar_events.append({
@@ -872,9 +890,12 @@ else:
 
         with tab1:
             my_public_diaries = get_user_diaries(current_user, is_public_flag=True)
-            calendar_events = [{
-                "title": f"🌐 {data['emotion']}", "start": d, "end": d, "allDay": True, "color": main_color
-            } for d, data in my_public_diaries.items() if data.get("content")]
+            calendar_events = list(birthday_events) # 생일 일정 포함
+            for d, data in my_public_diaries.items():
+                if data.get("content"):
+                    calendar_events.append({
+                        "title": f"🌐 {data['emotion']}", "start": d, "end": d, "allDay": True, "color": main_color
+                    })
 
             cal_res_p = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"public_cal_{st.session_state.theme}_{main_color}_{sub_color}")
 
