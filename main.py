@@ -1104,7 +1104,6 @@ else:
         friends = get_user_friends(current_user)
         if friends:
             for f in friends:
-                # 최신 친구 정보 업데이트 반영 조회
                 conn = get_connection()
                 c_f = conn.cursor()
                 c_f.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (f['friend_username'],))
@@ -1424,7 +1423,7 @@ else:
         friends = get_user_friends(current_user)
         
         if friends:
-            friend_options = {f"{f['friend_icon']} {f['friend_nickname']} ({f['friend_username'])": f for f in friends}
+            friend_options = {f"{f['friend_icon']} {f['friend_nickname']} ({f['friend_username']})": f for f in friends}
             selected_friend_label = st.selectbox("구경할 친구를 선택해 주세요:", list(friend_options.keys()))
             selected_friend = friend_options[selected_friend_label]
             f_uname = selected_friend['friend_username']
@@ -1432,13 +1431,11 @@ else:
             
             st.markdown(f"### ✨ {selected_friend['friend_icon']} **{f_nick}** 님의 일기장")
             
-            # 친구와 나와의 교환일기 확인용 ID 계산
             f_exchange_id = f"ex_{min(current_user, f_uname)}_{max(current_user, f_uname)}"
             
             tab_f1, tab_f2 = st.tabs(["🌐 공개 일기", "💌 함께 쓴 교환일기"])
             
             with tab_f1:
-                # 친구의 전체 공개 일기 또는 나에게 허용된 일기 조회
                 all_pubs = get_all_public_diaries(current_user)
                 friend_pubs = [p for p in all_pubs if p['username'] == f_uname]
                 
@@ -1484,7 +1481,6 @@ else:
 
         st.header(f"✏️ {title_prefix} 작성/수정 ({s_date})")
         
-        # 🎛️ 아날로그 / 디지털 모드 선택 토글
         editor_mode = st.radio("일기장 스타일 선택:", ["📖 아날로그 종이 노트", "💻 디지털 모던 노트"], horizontal=True)
         
         diaries = get_user_diaries(current_user, is_public_flag=is_pub)
@@ -1495,7 +1491,6 @@ else:
         sel_emo = st.selectbox("이날의 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
-        # 선택한 스타일에 따른 컨테이너 렌더링
         if editor_mode == "📖 아날로그 종이 노트":
             st.markdown(f"""
                 <div class="diary-note-container">
@@ -1562,7 +1557,6 @@ else:
         eid = st.session_state.exchange_id
         st.header(f"💌 교환일기 작성 ({s_date})")
 
-        # 🎛️ 아날로그 / 디지털 모드 선택 토글
         editor_mode_ex = st.radio("교환일기장 스타일 선택:", ["📖 아날로그 종이 노트", "💻 디지털 모던 노트"], horizontal=True, key="ex_mode_radio")
 
         e_diaries = get_exchange_diaries(eid).get(s_date, [])
