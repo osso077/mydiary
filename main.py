@@ -690,7 +690,6 @@ if st.session_state.user is not None:
             letter-spacing: 1px;
         }}
         
-        /* 📝 진짜 일기장(노트) 스타일 적용 */
         .diary-note-container {{
             background-color: #FFFDF9 !important;
             color: #2C2C2C !important;
@@ -1166,9 +1165,9 @@ else:
 
         clicked_date = None
         if cal_res and "dateClick" in cal_res:
-            clicked_date = cal_res["dateClick"]["date"].split("T")[0]
+            clicked_date = cal_res["dateClick"]["date"][:10]
         elif cal_res and "select" in cal_res:
-            clicked_date = cal_res["select"]["start"].split("T")[0]
+            clicked_date = cal_res["select"]["start"][:10]
 
         if clicked_date:
             st.session_state.selected_date = clicked_date
@@ -1197,9 +1196,9 @@ else:
 
         clicked_date_s = None
         if cal_res_s and "dateClick" in cal_res_s:
-            clicked_date_s = cal_res_s["dateClick"]["date"].split("T")[0]
+            clicked_date_s = cal_res_s["dateClick"]["date"][:10]
         elif cal_res_s and "select" in cal_res_s:
-            clicked_date_s = cal_res_s["select"]["start"].split("T")[0]
+            clicked_date_s = cal_res_s["select"]["start"][:10]
 
         if clicked_date_s:
             st.session_state.selected_date = clicked_date_s
@@ -1293,9 +1292,9 @@ else:
 
         clicked_date_e = None
         if cal_res_e and "dateClick" in cal_res_e:
-            clicked_date_e = cal_res_e["dateClick"]["date"].split("T")[0]
+            clicked_date_e = cal_res_e["dateClick"]["date"][:10]
         elif cal_res_e and "select" in cal_res_e:
-            clicked_date_e = cal_res_e["select"]["start"].split("T")[0]
+            clicked_date_e = cal_res_e["select"]["start"][:10]
 
         if clicked_date_e:
             st.session_state.selected_date = clicked_date_e
@@ -1320,9 +1319,9 @@ else:
 
             clicked_date_p = None
             if cal_res_p and "dateClick" in cal_res_p:
-                clicked_date_p = cal_res_p["dateClick"]["date"].split("T")[0]
+                clicked_date_p = cal_res_p["dateClick"]["date"][:10]
             elif cal_res_p and "select" in cal_res_p:
-                clicked_date_p = cal_res_p["select"]["start"].split("T")[0]
+                clicked_date_p = cal_res_p["select"]["start"][:10]
 
             if clicked_date_p:
                 st.session_state.selected_date = clicked_date_p
@@ -1341,7 +1340,6 @@ else:
 
                         st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
                         
-                        # 모두의 이야기 모아보기 안의 글도 노트 스타일로 렌더링
                         st.markdown(f"""
                             <div class="diary-note-container" style="margin-bottom: 16px;">
                                 <div style="white-space: pre-wrap; color: #2C2C2C;">{item['content']}</div>
@@ -1384,7 +1382,6 @@ else:
         sel_emo = st.selectbox("이날의 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
-        # 📝 진짜 일기장 노트 컨테이너 감싸기
         st.markdown(f"""
             <div class="diary-note-container">
                 <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">📖 {s_date}의 기록 ({sel_emo})</div>
@@ -1454,7 +1451,6 @@ else:
             p_vis = "🔒 둘만 보기" if partner_e_diary.get("is_public", 0) == 0 else "🌐 모두에게 공개"
             st.caption(f"공개 여부: {p_vis}")
             
-            # 상대방 일기도 노트 스타일로 보여주기
             st.markdown(f"""
                 <div class="diary-note-container" style="margin-bottom: 20px;">
                     <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">{partner_e_diary['emotion']} {partner_e_diary['nickname']}님의 기록</div>
@@ -1468,7 +1464,6 @@ else:
         sel_emo = st.selectbox("오늘 상대방에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
-        # 📝 내 교환일기 작성부 노트 감성 적용
         st.markdown(f"""
             <div class="diary-note-container">
                 <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">📖 나의 교환일기 기록 ({sel_emo})</div>
