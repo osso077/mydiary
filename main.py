@@ -567,7 +567,8 @@ THEME_STYLES = {
         "card_bg": "#1D162B", "card_border": "#6B4899", "default_main": "#8B5CF6", "default_sub": "#06B6D4",
         "font_import": "https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', 'Cinzel Decorative', cursive",
-        "radius": "28px", "shadow": "0 0 20px rgba(139, 92, 246, 0.4)"
+        "radius": "28px", "shadow": "0 0 20px rgba(139, 92, 246, 0.4)",
+        "paper_bg": "#181222", "paper_text": "#E2D9F3", "paper_line": "#3B2E56"
     },
     "포근함": {
         "title": "🧸 소소하고 포근한 일기장",
@@ -575,7 +576,8 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#E3D5CA", "default_main": "#DDA15E", "default_sub": "#BC6C25",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
-        "radius": "16px", "shadow": "0 4px 12px rgba(0,0,0,0.05)"
+        "radius": "16px", "shadow": "0 4px 12px rgba(0,0,0,0.05)",
+        "paper_bg": "#FFFDF9", "paper_text": "#2C2C2C", "paper_line": "#E5DFD3"
     },
     "공주": {
         "title": "👑 공주님의 비밀 다이어리 🎀",
@@ -583,7 +585,8 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#FFB6C1", "default_main": "#FF69B4", "default_sub": "#FF1493",
         "font_import": "https://fonts.googleapis.com/css2?family=Single+Day&display=swap",
         "font_family": "'Single Day', cursive",
-        "radius": "24px", "shadow": "0 8px 20px rgba(255,105,180,0.15)"
+        "radius": "24px", "shadow": "0 8px 20px rgba(255,105,180,0.15)",
+        "paper_bg": "#FFFAFC", "paper_text": "#5C3D46", "paper_line": "#FFD1DC"
     },
     "귀여움": {
         "title": "🐣 병아리의 자그마한 일기장 🐥",
@@ -591,7 +594,8 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#FFE599", "default_main": "#FFB000", "default_sub": "#F59E0B",
         "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', cursive",
-        "radius": "20px", "shadow": "0 6px 14px rgba(255,176,0,0.15)"
+        "radius": "20px", "shadow": "0 6px 14px rgba(255,176,0,0.15)",
+        "paper_bg": "#FFFFFD", "paper_text": "#4A4438", "paper_line": "#FFEEB2"
     },
     "심플": {
         "title": "MINIMAL DIARY",
@@ -599,7 +603,8 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#DEE2E6", "default_main": "#343A40", "default_sub": "#495057",
         "font_import": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500&display=swap",
         "font_family": "'Noto Sans KR', sans-serif",
-        "radius": "4px", "shadow": "none"
+        "radius": "4px", "shadow": "none",
+        "paper_bg": "#FFFFFF", "paper_text": "#212529", "paper_line": "#E9ECEF"
     },
     "클래식": {
         "title": "📖 서재 속 양장본 일기장",
@@ -607,7 +612,8 @@ THEME_STYLES = {
         "card_bg": "#FCFBF7", "card_border": "#D2C7B8", "default_main": "#8C6D53", "default_sub": "#654321",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap",
         "font_family": "'Gowun Batang', serif",
-        "radius": "8px", "shadow": "0 2px 8px rgba(61,49,42,0.08)"
+        "radius": "8px", "shadow": "0 2px 8px rgba(61,49,42,0.08)",
+        "paper_bg": "#FBF9F1", "paper_text": "#2C2C2C", "paper_line": "#E2D9C8"
     },
     "🌙 다크(밤)": {
         "title": "🌙 한밤중의 비밀 기록",
@@ -615,7 +621,8 @@ THEME_STYLES = {
         "card_bg": "#1E1E24", "card_border": "#2D2D38", "default_main": "#BB86FC", "default_sub": "#03DAC6",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
-        "radius": "12px", "shadow": "0 4px 16px rgba(0,0,0,0.4)"
+        "radius": "12px", "shadow": "0 4px 16px rgba(0,0,0,0.4)",
+        "paper_bg": "#1A1A22", "paper_text": "#E2E8F0", "paper_line": "#2E2E3C"
     },
     "👾 레트로": {
         "title": "📟 Y2K 감성 다이어리 👾",
@@ -623,7 +630,8 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#80DEEA", "default_main": "#00ACC1", "default_sub": "#FF5722",
         "font_import": "https://fonts.googleapis.com/css2?family=DungGeunMo&display=swap",
         "font_family": "'DungGeunMo', monospace",
-        "radius": "0px", "shadow": "4px 4px 0px #004D40"
+        "radius": "0px", "shadow": "4px 4px 0px #004D40",
+        "paper_bg": "#F5FFFF", "paper_text": "#004D40", "paper_line": "#B2EBF2"
     },
     "🌊 바다": {
         "title": "🌊 푸른 바다 속 이야기 🐬",
@@ -631,7 +639,8 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#B0C4DE", "default_main": "#0284C7", "default_sub": "#0369A1",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap",
         "font_family": "'Gowun Dodum', sans-serif",
-        "radius": "18px", "shadow": "0 8px 16px rgba(2,132,199,0.12)"
+        "radius": "18px", "shadow": "0 8px 16px rgba(2,132,199,0.12)",
+        "paper_bg": "#F4F9FB", "paper_text": "#1E3E62", "paper_line": "#CFE2EC"
     },
     "🌲 숲": {
         "title": "🍃 울창한 숲속 비밀노트 🌲",
@@ -639,7 +648,8 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#C2E0D2", "default_main": "#15803D", "default_sub": "#166534",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap",
         "font_family": "'Gowun Batang', serif",
-        "radius": "14px", "shadow": "0 4px 12px rgba(21,128,61,0.08)"
+        "radius": "14px", "shadow": "0 4px 12px rgba(21,128,61,0.08)",
+        "paper_bg": "#F6FBF8", "paper_text": "#1C352D", "paper_line": "#D4ECE1"
     },
     "🔮 몽환": {
         "title": "🔮 달빛 아래 몽환 다이어리 🌙",
@@ -647,7 +657,8 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#E9D5FF", "default_main": "#9333EA", "default_sub": "#C084FC",
         "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
         "font_family": "'Gamja Flower', cursive",
-        "radius": "22px", "shadow": "0 8px 24px rgba(147,51,234,0.15)"
+        "radius": "22px", "shadow": "0 8px 24px rgba(147,51,234,0.15)",
+        "paper_bg": "#FAF5FF", "paper_text": "#3C2A4D", "paper_line": "#EAD6FC"
     }
 }
 
@@ -684,7 +695,7 @@ sub_color = st.session_state.sub_color if st.session_state.sub_color else theme_
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입 (아날로그 노트 감성 추가)
+# 동적 CSS 주입 (아날로그 노트 & 디지털 노트 스타일 분기)
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -704,32 +715,43 @@ if st.session_state.user is not None:
             letter-spacing: 1px;
         }}
         
+        /* 📝 아날로그 종이 노트 스타일 (테마별 맞춤 색상) */
         .diary-note-container {{
-            background-color: #FFFDF9 !important;
-            color: #2C2C2C !important;
+            background-color: {theme_cfg['paper_bg']} !important;
+            color: {theme_cfg['paper_text']} !important;
             border: 1px solid {theme_cfg['card_border']} !important;
             border-radius: 12px !important;
             padding: 24px 24px 24px 36px !important;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.08), inset 0 0 15px rgba(245, 235, 215, 0.4) !important;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.08), inset 0 0 15px rgba(0, 0, 0, 0.03) !important;
             position: relative;
             background-image: 
                 linear-gradient(90deg, transparent 32px, #FF808033 32px, #FF808033 34px, transparent 34px),
-                linear-gradient(#E5DFD3 1px, transparent 1px) !important;
+                linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
             background-size: 100% 32px !important;
             line-height: 32px !important;
         }}
 
-        .stTextArea textarea {{
+        .diary-note-container textarea, .diary-note-container .stTextArea textarea {{
             background-color: transparent !important;
             border: none !important;
             border-radius: 0px !important;
-            color: #2C2C2C !important;
+            color: {theme_cfg['paper_text']} !important;
             font-family: {theme_cfg['font_family']} !important;
             font-size: 1.15rem !important;
             line-height: 32px !important;
             padding-top: 4px !important;
             box-shadow: none !important;
             resize: vertical !important;
+        }}
+
+        /* 💻 디지털 모던 노트 스타일 */
+        .diary-digital-container {{
+            background-color: {theme_cfg['card_bg']} !important;
+            color: {theme_cfg['text']} !important;
+            border: 1px solid {theme_cfg['card_border']} !important;
+            border-radius: {theme_cfg['radius']} !important;
+            padding: 24px !important;
+            box-shadow: {theme_cfg['shadow']} !important;
         }}
         
         .stTextInput input, div[data-testid="stForm"] {{
@@ -952,7 +974,6 @@ else:
         
         st.write("프로필 이모티콘 선택:")
         cols_emoji = st.columns(4)
-        selected_icon = current_profile_icon
         for idx, emo in enumerate(PROFILE_ICONS):
             col_idx = idx % 4
             with cols_emoji[col_idx]:
@@ -1356,7 +1377,7 @@ else:
                         
                         st.markdown(f"""
                             <div class="diary-note-container" style="margin-bottom: 16px;">
-                                <div style="white-space: pre-wrap; color: #2C2C2C;">{item['content']}</div>
+                                <div style="white-space: pre-wrap;">{item['content']}</div>
                             </div>
                         """, unsafe_allow_html=True)
                         
@@ -1381,13 +1402,17 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 5: 비밀/공개 일기 에디터 (노트 디자인 적용)
+    # PAGE 5: 비밀/공개 일기 에디터 (아날로그/디지털 선택 기능 추가)
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
         title_prefix = "🌐 공개일기" if is_pub else "🔒 비밀일기"
 
         st.header(f"✏️ {title_prefix} 작성/수정 ({s_date})")
+        
+        # 🎛️ 아날로그 / 디지털 모드 선택 토글
+        editor_mode = st.radio("일기장 스타일 선택:", ["📖 아날로그 종이 노트", "💻 디지털 모던 노트"], horizontal=True)
+        
         diaries = get_user_diaries(current_user, is_public_flag=is_pub)
         has_ex = s_date in diaries and bool(diaries[s_date].get("content", "").strip())
         ex_data = diaries.get(s_date, {})
@@ -1396,14 +1421,21 @@ else:
         sel_emo = st.selectbox("이날의 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
-        st.markdown(f"""
-            <div class="diary-note-container">
-                <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">📖 {s_date}의 기록 ({sel_emo})</div>
-        """, unsafe_allow_html=True)
-
-        txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=280, label_visibility="collapsed")
-        
-        st.markdown("</div>", unsafe_allow_html=True)
+        # 선택한 스타일에 따른 컨테이너 렌더링
+        if editor_mode == "📖 아날로그 종이 노트":
+            st.markdown(f"""
+                <div class="diary-note-container">
+                    <div style="font-weight: bold; margin-bottom: 8px; opacity: 0.8;">📖 {s_date}의 기록 ({sel_emo})</div>
+            """, unsafe_allow_html=True)
+            txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=280, label_visibility="collapsed")
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+                <div class="diary-digital-container">
+                    <div style="font-weight: bold; margin-bottom: 8px;">💻 {s_date}의 디지털 기록 ({sel_emo})</div>
+            """, unsafe_allow_html=True)
+            txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=280, label_visibility="collapsed")
+            st.markdown("</div>", unsafe_allow_html=True)
 
         friends = get_user_friends(current_user)
         existing_allow = ex_data.get("allow_friends", "") if "allow_friends" in ex_data else ""
@@ -1450,11 +1482,14 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 6: 교환일기 에디터 (노트 디자인 적용)
+    # PAGE 6: 교환일기 에디터 (아날로그/디지털 선택 기능 추가)
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
         eid = st.session_state.exchange_id
         st.header(f"💌 교환일기 작성 ({s_date})")
+
+        # 🎛️ 아날로그 / 디지털 모드 선택 토글
+        editor_mode_ex = st.radio("교환일기장 스타일 선택:", ["📖 아날로그 종이 노트", "💻 디지털 모던 노트"], horizontal=True, key="ex_mode_radio")
 
         e_diaries = get_exchange_diaries(eid).get(s_date, [])
         my_e_diary = next((d for d in e_diaries if d['username'] == current_user), None)
@@ -1467,8 +1502,8 @@ else:
             
             st.markdown(f"""
                 <div class="diary-note-container" style="margin-bottom: 20px;">
-                    <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">{partner_e_diary['emotion']} {partner_e_diary['nickname']}님의 기록</div>
-                    <div style="white-space: pre-wrap; color: #2C2C2C;">{partner_e_diary['content']}</div>
+                    <div style="font-weight: bold; margin-bottom: 8px;">{partner_e_diary['emotion']} {partner_e_diary['nickname']}님의 기록</div>
+                    <div style="white-space: pre-wrap;">{partner_e_diary['content']}</div>
                 </div>
             """, unsafe_allow_html=True)
             st.markdown("---")
@@ -1478,14 +1513,20 @@ else:
         sel_emo = st.selectbox("오늘 상대방에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
-        st.markdown(f"""
-            <div class="diary-note-container">
-                <div style="font-weight: bold; margin-bottom: 8px; color: #6C5B52;">📖 나의 교환일기 기록 ({sel_emo})</div>
-        """, unsafe_allow_html=True)
-
-        txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=250, label_visibility="collapsed")
-        
-        st.markdown("</div>", unsafe_allow_html=True)
+        if editor_mode_ex == "📖 아날로그 종이 노트":
+            st.markdown(f"""
+                <div class="diary-note-container">
+                    <div style="font-weight: bold; margin-bottom: 8px; opacity: 0.8;">📖 나의 교환일기 기록 ({sel_emo})</div>
+            """, unsafe_allow_html=True)
+            txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=250, label_visibility="collapsed")
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+                <div class="diary-digital-container">
+                    <div style="font-weight: bold; margin-bottom: 8px;">💻 나의 교환일기 기록 ({sel_emo})</div>
+            """, unsafe_allow_html=True)
+            txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=250, label_visibility="collapsed")
+            st.markdown("</div>", unsafe_allow_html=True)
 
         curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
         ex_public_choice = st.radio(
