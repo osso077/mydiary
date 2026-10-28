@@ -166,8 +166,8 @@ def init_db():
             username TEXT,
             friend_username TEXT,
             friend_nickname TEXT,
-            friend_icon TEXT,
-            friend_status TEXT,
+            friend_icon TEXT DEFAULT '🧸',
+            friend_status TEXT DEFAULT '',
             FOREIGN KEY (username) REFERENCES users(username)
         )
     ''')
@@ -189,6 +189,8 @@ def init_db():
         ("diaries", "views INTEGER DEFAULT 0"),
         ("exchange_diaries", "is_public INTEGER DEFAULT 0"),
         ("exchange_diaries", "views INTEGER DEFAULT 0"),
+        ("friendships", "friend_nickname TEXT DEFAULT ''"),
+        ("friendships", "friend_icon TEXT DEFAULT '🧸'"),
         ("friendships", "friend_status TEXT DEFAULT ''")
     ]
     for tbl, col in cols:
