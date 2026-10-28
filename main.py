@@ -540,6 +540,20 @@ def delete_comment(comment_id):
     conn.close()
     push_db_to_github("Comment deleted")
 
+# --- 타임존 오차 보정 함수 (UTC 시차 보정) ---
+def parse_calendar_date(raw_date_str):
+    if not raw_date_str:
+        return None
+    raw = str(raw_date_str).strip()
+    if 'T' in raw:
+        try:
+            dt_utc = datetime.datetime.fromisoformat(raw.replace('Z', '+00:00'))
+            dt_kst = dt_utc + datetime.timedelta(hours=9)
+            return dt_kst.strftime("%Y-%m-%d")
+        except Exception:
+            return raw.split('T')[0]
+    return raw[:10]
+
 
 # =========================================================
 # 2. UI 및 테마 설정 (11종)
@@ -1165,9 +1179,9 @@ else:
 
         clicked_date = None
         if cal_res and "dateClick" in cal_res:
-            clicked_date = cal_res["dateClick"]["date"][:10]
+            clicked_date = parse_calendar_date(cal_res["dateClick"].get("date"))
         elif cal_res and "select" in cal_res:
-            clicked_date = cal_res["select"]["start"][:10]
+            clicked_date = parse_calendar_date(cal_res["select"].get("start"))
 
         if clicked_date:
             st.session_state.selected_date = clicked_date
@@ -1196,9 +1210,9 @@ else:
 
         clicked_date_s = None
         if cal_res_s and "dateClick" in cal_res_s:
-            clicked_date_s = cal_res_s["dateClick"]["date"][:10]
+            clicked_date_s = parse_calendar_date(cal_res_s["dateClick"].get("date"))
         elif cal_res_s and "select" in cal_res_s:
-            clicked_date_s = cal_res_s["select"]["start"][:10]
+            clicked_date_s = parse_calendar_date(cal_res_s["select"].get("start"))
 
         if clicked_date_s:
             st.session_state.selected_date = clicked_date_s
@@ -1292,9 +1306,9 @@ else:
 
         clicked_date_e = None
         if cal_res_e and "dateClick" in cal_res_e:
-            clicked_date_e = cal_res_e["dateClick"]["date"][:10]
+            clicked_date_e = parse_calendar_date(cal_res_e["dateClick"].get("date"))
         elif cal_res_e and "select" in cal_res_e:
-            clicked_date_e = cal_res_e["select"]["start"][:10]
+            clicked_date_e = parse_calendar_date(cal_res_e["select"].get("start"))
 
         if clicked_date_e:
             st.session_state.selected_date = clicked_date_e
@@ -1319,9 +1333,9 @@ else:
 
             clicked_date_p = None
             if cal_res_p and "dateClick" in cal_res_p:
-                clicked_date_p = cal_res_p["dateClick"]["date"][:10]
+                clicked_date_p = parse_calendar_date(cal_res_p["dateClick"].get("date"))
             elif cal_res_p and "select" in cal_res_p:
-                clicked_date_p = cal_res_p["select"]["start"][:10]
+                clicked_date_p = parse_calendar_date(cal_res_p["select"].get("start"))
 
             if clicked_date_p:
                 st.session_state.selected_date = clicked_date_p
