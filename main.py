@@ -1104,14 +1104,25 @@ else:
         friends = get_user_friends(current_user)
         if friends:
             for f in friends:
-                fc1, fc2 = st.columns([3, 2])
-                with fc1:
-                    status_text = f" - *{f['friend_status']}*" if f.get('friend_status') else ""
-                    st.write(f"{f['friend_icon']} **{f['friend_nickname']}**{status_text}")
-                with fc2:
-                    if st.button("🗑️ 친구 삭제", key=f"del_f_{f['id']}"):
-                        delete_friend(f['id'])
-                        st.rerun()
+                # 최신 친구 정보 업데이트 반영 조회
+                conn = get_connection()
+                c_f = conn.cursor()
+                c_f.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (f['friend_username'],))
+                f_row = c_f.fetchone()
+                conn.close()
+                
+                f_nick = f_row[0] if f_row else f['friend_nickname']
+                f_icon = f_row[1] if (f_row and f_row[1]) else (f['friend_icon'] or '🧸')
+                f_stat = f_row[2] if f_row else f['friend_status']
+
+                st.markdown(f"**{f_icon} {f_nick}**")
+                if f_stat:
+                    st.caption(f"💬 {f_stat}")
+                
+                if st.button("🗑️ 친구 삭제", key=f"del_f_{f['id']}"):
+                    delete_friend(f['id'])
+                    st.rerun()
+                st.markdown("---")
         else:
             st.caption("등록된 친구가 없습니다.")
 
@@ -1139,7 +1150,7 @@ else:
     # 4. 일기 (교환일기/비밀일기/공개일기 선택)
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📖 일기")
-    menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기"]
+    menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기", "👥 친구 일기 구경하기"]
     nav_choice = st.sidebar.radio("일기 메뉴", menu_options, label_visibility="collapsed")
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
@@ -1156,6 +1167,9 @@ else:
         st.rerun()
     elif nav_choice == "🌐 공개일기" and st.session_state.page not in ["public_calendar", "public_editor"]:
         st.session_state.page = "public_calendar"
+        st.rerun()
+    elif nav_choice == "👥 친구 일기 구경하기" and st.session_state.page != "friend_diary_view":
+        st.session_state.page = "friend_diary_view"
         st.rerun()
 
     st.sidebar.markdown("---")
@@ -1403,6 +1417,64 @@ else:
                         st.markdown("---")
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
+
+    # PAGE 4-1: 👥 친구 일기 구경하기 기능
+    elif st.session_state.page == "friend_diary_view":
+        st.header("👥 친구 일기 구경하기")
+        friends = get_user_friends(current_user)
+        
+        if friends:
+            friend_options = {f"{f['friend_icon']} {f['friend_nickname']} ({f['friend_username'])": f for f in friends}
+            selected_friend_label = st.selectbox("구경할 친구를 선택해 주세요:", list(friend_options.keys()))
+            selected_friend = friend_options[selected_friend_label]
+            f_uname = selected_friend['friend_username']
+            f_nick = selected_friend['friend_nickname']
+            
+            st.markdown(f"### ✨ {selected_friend['friend_icon']} **{f_nick}** 님의 일기장")
+            
+            # 친구와 나와의 교환일기 확인용 ID 계산
+            f_exchange_id = f"ex_{min(current_user, f_uname)}_{max(current_user, f_uname)}"
+            
+            tab_f1, tab_f2 = st.tabs(["🌐 공개 일기", "💌 함께 쓴 교환일기"])
+            
+            with tab_f1:
+                # 친구의 전체 공개 일기 또는 나에게 허용된 일기 조회
+                all_pubs = get_all_public_diaries(current_user)
+                friend_pubs = [p for p in all_pubs if p['username'] == f_uname]
+                
+                if friend_pubs:
+                    for item in friend_pubs:
+                        increment_public_views(item['username'], item['date'], item['type'], current_user)
+                        with st.container():
+                            p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
+                            header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
+                            st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views']}</small>", unsafe_allow_html=True)
+                            st.markdown(f"""
+                                <div class="diary-note-container" style="margin-bottom: 16px;">
+                                    <div style="white-space: pre-wrap;">{item['content']}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                            st.markdown("---")
+                else:
+                    st.info(f"'{f_nick}'님이 작성한 공개 일기가 없습니다.")
+            
+            with tab_f2:
+                ex_diaries = get_exchange_diaries(f_exchange_id)
+                if ex_diaries:
+                    for d_str, d_list in sorted(ex_diaries.items(), reverse=True):
+                        st.subheader(f"📅 {d_str}")
+                        for ed in d_list:
+                            st.markdown(f"**{ed['nickname']}** ({ed['emotion']}):")
+                            st.markdown(f"""
+                                <div class="diary-note-container" style="margin-bottom: 12px;">
+                                    <div style="white-space: pre-wrap;">{ed['content']}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        st.markdown("---")
+                else:
+                    st.info(f"'{f_nick}'님과 함께 작성한 교환일기가 아직 없습니다.")
+        else:
+            st.info("등록된 친구가 없습니다. 사이드바의 '친구 관리'에서 친구를 먼저 추가해 주세요!")
 
     # PAGE 5: 비밀/공개 일기 에디터 (아날로그/디지털 선택 기능 추가)
     elif st.session_state.page in ["secret_editor", "public_editor"]:
