@@ -1102,12 +1102,12 @@ else:
         friends = get_user_friends(current_user)
         if friends:
             for f in friends:
-                fc1, fc2 = st.columns([4, 1])
+                fc1, fc2 = st.columns([3, 2])
                 with fc1:
                     status_text = f" - *{f['friend_status']}*" if f.get('friend_status') else ""
                     st.write(f"{f['friend_icon']} **{f['friend_nickname']}**{status_text}")
                 with fc2:
-                    if st.button("삭제", key=f"del_f_{f['id']}"):
+                    if st.button("🗑️ 친구 삭제", key=f"del_f_{f['id']}"):
                         delete_friend(f['id'])
                         st.rerun()
         else:
