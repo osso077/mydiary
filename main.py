@@ -172,7 +172,6 @@ def init_db():
         )
     ''')
 
-    # 친구 요청 테이블 추가
     c.execute('''
         CREATE TABLE IF NOT EXISTS friend_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -320,13 +319,11 @@ def send_friend_request(my_username, friend_code):
         conn.close()
         return False, "자신의 초대코드는 입력할 수 없습니다."
 
-    # 이미 친구인지 확인
     c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (my_username, f_username))
     if c.fetchone():
         conn.close()
         return False, "이미 친구로 등록된 사용자입니다."
 
-    # 이미 보낸 요청인지 확인
     c.execute("SELECT id FROM friend_requests WHERE sender_username = ? AND receiver_username = ? AND status = 'pending'", (my_username, f_username))
     if c.fetchone():
         conn.close()
@@ -341,13 +338,6 @@ def send_friend_request(my_username, friend_code):
 def get_pending_friend_requests(username):
     conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        fr.id, u.username, u.nickname, u.profile_icon, u.status_message
-        FROM friend_requests fr
-        JOIN users u ON fr.sender_username = u.username
-        WHERE fr.receiver_username = ? AND fr.status = 'pending'
-    '''.replace("fr.id", "fr.id")) # Syntax guard
-    # Fixed query below:
     c.execute('''
         SELECT fr.id, u.username, u.nickname, u.profile_icon, u.status_message 
         FROM friend_requests fr 
@@ -370,17 +360,14 @@ def accept_friend_request(request_id, my_username):
     sender_username = req[0]
     c.execute("UPDATE friend_requests SET status = 'accepted' WHERE id = ?", (request_id,))
 
-    # 상대방 정보 조회
     c.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (sender_username,))
     s_info = c.fetchone()
     s_nick, s_icon, s_status = s_info[0], s_info[1] or '🧸', s_info[2] or ''
 
-    # 내 정보 조회
     c.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (my_username,))
     my_info = c.fetchone()
     my_nick, my_icon, my_status = my_info[0], my_info[1] or '🧸', my_info[2] or ''
 
-    # 상호 친구 관계 등록
     c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
               (my_username, sender_username, s_nick, s_icon, s_status))
     c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
@@ -1165,7 +1152,6 @@ else:
             else:
                 st.warning("초대코드를 입력해 주세요.")
 
-        # 받은 친구 요청 확인
         pending_reqs = get_pending_friend_requests(current_user)
         if pending_reqs:
             st.markdown("---")
