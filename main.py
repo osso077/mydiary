@@ -129,6 +129,7 @@ def init_db():
             date TEXT,
             emotion TEXT,
             content TEXT,
+            drawing TEXT DEFAULT '',
             is_public INTEGER DEFAULT 0,
             allow_friends TEXT DEFAULT '',
             views INTEGER DEFAULT 0,
@@ -173,6 +174,7 @@ def init_db():
             nickname TEXT,
             emotion TEXT,
             content TEXT,
+            drawing TEXT DEFAULT '',
             is_public INTEGER DEFAULT 0,
             views INTEGER DEFAULT 0,
             PRIMARY KEY (exchange_id, date, username)
@@ -259,9 +261,11 @@ def init_db():
         ("users", "exchange_id TEXT DEFAULT ''"),
         ("users", "exchange_type TEXT DEFAULT '연인'"),
         ("users", "exchange_start_date TEXT DEFAULT ''"),
+        ("diaries", "drawing TEXT DEFAULT ''"),
         ("diaries", "is_public INTEGER DEFAULT 0"),
         ("diaries", "allow_friends TEXT DEFAULT ''"),
         ("diaries", "views INTEGER DEFAULT 0"),
+        ("exchange_diaries", "drawing TEXT DEFAULT ''"),
         ("exchange_diaries", "is_public INTEGER DEFAULT 0"),
         ("exchange_diaries", "views INTEGER DEFAULT 0"),
         ("friendships", "friend_nickname TEXT DEFAULT ''"),
@@ -573,31 +577,31 @@ def delete_user_dday(dday_id):
 def get_user_diaries(username, is_public_flag):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT date, emotion, content, is_public, allow_friends FROM diaries WHERE username = ?", (username,))
+    c.execute("SELECT date, emotion, content, drawing, is_public, allow_friends FROM diaries WHERE username = ?", (username,))
     rows = c.fetchall()
     conn.close()
     
     diaries = {}
     for r in rows:
-        dt, em, ct, ip, af = r[0], r[1], r[2], r[3], r[4]
+        dt, em, ct, dr, ip, af = r[0], r[1], r[2], r[3], r[4], r[5]
         if is_public_flag:
             if ip == 1 or (af and len(af.strip()) > 0):
-                diaries[dt] = {"emotion": em, "content": ct, "is_public": ip, "allow_friends": af}
+                diaries[dt] = {"emotion": em, "content": ct, "drawing": dr, "is_public": ip, "allow_friends": af}
         else:
             if ip == 0 and (not af or len(af.strip()) == 0):
-                diaries[dt] = {"emotion": em, "content": ct, "is_public": ip, "allow_friends": af}
+                diaries[dt] = {"emotion": em, "content": ct, "drawing": dr, "is_public": ip, "allow_friends": af}
     return diaries
 
 def get_all_public_diaries(current_user):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT d.date, d.emotion, d.content, u.nickname, d.username, d.views, 'individual' AS type, u.profile_icon, d.is_public, d.allow_friends
+        SELECT d.date, d.emotion, d.content, d.drawing, u.nickname, d.username, d.views, 'individual' AS type, u.profile_icon, d.is_public, d.allow_friends
         FROM diaries d
         JOIN users u ON d.username = u.username
         WHERE d.is_public = 1 OR d.allow_friends LIKE ?
         UNION ALL
-        SELECT ed.date, ed.emotion, ed.content, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '🧸') AS profile_icon, ed.is_public, '' AS allow_friends
+        SELECT ed.date, ed.emotion, ed.content, ed.drawing, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '🧸') AS profile_icon, ed.is_public, '' AS allow_friends
         FROM exchange_diaries ed
         LEFT JOIN users u ON ed.username = u.username
         WHERE ed.is_public = 1
@@ -608,12 +612,12 @@ def get_all_public_diaries(current_user):
     
     public_list = []
     for r in rows:
-        is_pub = r[8]
-        allow_str = r[9] if r[9] else ""
-        if is_pub == 1 or current_user == r[4] or current_user in [x.strip() for x in allow_str.split(",") if x.strip()]:
+        is_pub = r[9]
+        allow_str = r[10] if r[10] else ""
+        if is_pub == 1 or current_user == r[5] or current_user in [x.strip() for x in allow_str.split(",") if x.strip()]:
             public_list.append({
-                "date": r[0], "emotion": r[1], "content": r[2], 
-                "nickname": r[3], "username": r[4], "views": r[5], "type": r[6], "profile_icon": r[7] if r[7] else '🧸'
+                "date": r[0], "emotion": r[1], "content": r[2], "drawing": r[3],
+                "nickname": r[4], "username": r[5], "views": r[6], "type": r[7], "profile_icon": r[8] if r[8] else '🧸'
             })
     return public_list
 
@@ -629,15 +633,15 @@ def increment_public_views(username, date_str, diary_type, current_user):
     conn.commit()
     conn.close()
 
-def save_diary(username, date_str, emotion, content, is_public, allow_friends):
+def save_diary(username, date_str, emotion, content, drawing, is_public, allow_friends):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO diaries (username, date, emotion, content, is_public, allow_friends)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO diaries (username, date, emotion, content, drawing, is_public, allow_friends)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(username, date) DO UPDATE SET
-            emotion=excluded.emotion, content=excluded.content, is_public=excluded.is_public, allow_friends=excluded.allow_friends
-    ''', (username, date_str, emotion, content, 1 if is_public else 0, allow_friends))
+            emotion=excluded.emotion, content=excluded.content, drawing=excluded.drawing, is_public=excluded.is_public, allow_friends=excluded.allow_friends
+    ''', (username, date_str, emotion, content, drawing, 1 if is_public else 0, allow_friends))
     conn.commit()
     conn.close()
     push_db_to_github(f"Update diary entry for {date_str}")
@@ -676,27 +680,27 @@ def save_daily_answer(username, date_str, question, answer):
 def get_exchange_diaries(exchange_id):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT date, username, nickname, emotion, content, is_public, views FROM exchange_diaries WHERE exchange_id = ?", (exchange_id,))
+    c.execute("SELECT date, username, nickname, emotion, content, drawing, is_public, views FROM exchange_diaries WHERE exchange_id = ?", (exchange_id,))
     rows = c.fetchall()
     conn.close()
     
     result = {}
     for r in rows:
-        dt, un, nk, em, ct, ip, vw = r[0], r[1], r[2], r[3], r[4], r[5], r[6]
+        dt, un, nk, em, ct, dr, ip, vw = r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
         if dt not in result:
             result[dt] = []
-        result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct, "is_public": ip, "views": vw})
+        result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct, "drawing": dr, "is_public": ip, "views": vw})
     return result
 
-def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, content, is_public):
+def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, content, drawing, is_public):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO exchange_diaries (exchange_id, date, username, nickname, emotion, content, is_public)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO exchange_diaries (exchange_id, date, username, nickname, emotion, content, drawing, is_public)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(exchange_id, date, username) DO UPDATE SET
-            emotion=excluded.emotion, content=excluded.content, nickname=excluded.nickname, is_public=excluded.is_public
-    ''', (exchange_id, date_str, username, nickname, emotion, content, 1 if is_public else 0))
+            emotion=excluded.emotion, content=excluded.content, drawing=excluded.drawing, nickname=excluded.nickname, is_public=excluded.is_public
+    ''', (exchange_id, date_str, username, nickname, emotion, content, drawing, 1 if is_public else 0))
     conn.commit()
     conn.close()
     push_db_to_github(f"Update exchange diary for {date_str}")
@@ -1454,7 +1458,7 @@ else:
 
         calendar_events = list(birthday_events)
         for date_str, diary_data in secret_diaries.items():
-            if diary_data.get("content") and diary_data["content"].strip():
+            if diary_data.get("content") or diary_data.get("drawing"):
                 calendar_events.append({
                     "title": f"🔒 {diary_data['emotion']}",
                     "start": date_str, "end": date_str, "allDay": True,
@@ -1621,7 +1625,7 @@ else:
             my_public_diaries = get_user_diaries(current_user, is_public_flag=True)
             calendar_events = list(birthday_events)
             for d, data in my_public_diaries.items():
-                if data.get("content"):
+                if data.get("content") or data.get("drawing"):
                     calendar_events.append({
                         "title": f"🌐 {data['emotion']}", "start": d, "end": d, "allDay": True, "color": main_color
                     })
@@ -1651,11 +1655,15 @@ else:
 
                         st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views'] + (1 if item['username'] == current_user else 0)}</small>", unsafe_allow_html=True)
                         
-                        st.markdown(f"""
-                            <div class="diary-note-container" style="margin-bottom: 16px;">
-                                <div style="white-space: pre-wrap;">{item['content']}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
+                        if item['content']:
+                            st.markdown(f"""
+                                <div class="diary-note-container" style="margin-bottom: 12px;">
+                                    <div style="white-space: pre-wrap;">{item['content']}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        
+                        if item['drawing']:
+                            st.image(item['drawing'], caption=f"{item['nickname']}님의 그림일기 🎨", use_column_width=True)
                         
                         comments = get_comments(item['username'], item['date'])
                         with st.expander(f"💬 댓글 ({len(comments)})"):
@@ -1705,11 +1713,14 @@ else:
                             p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
                             header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
                             st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views']}</small>", unsafe_allow_html=True)
-                            st.markdown(f"""
-                                <div class="diary-note-container" style="margin-bottom: 16px;">
-                                    <div style="white-space: pre-wrap;">{item['content']}</div>
-                                </div>
-                            """, unsafe_allow_html=True)
+                            if item['content']:
+                                st.markdown(f"""
+                                    <div class="diary-note-container" style="margin-bottom: 12px;">
+                                        <div style="white-space: pre-wrap;">{item['content']}</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                            if item['drawing']:
+                                st.image(item['drawing'], caption=f"{f_nick}님의 그림일기 🎨", use_column_width=True)
                             st.markdown("---")
                 else:
                     st.info(f"'{f_nick}'님이 작성한 공개 일기가 없습니다.")
@@ -1728,11 +1739,14 @@ else:
                                 st.markdown(f"📅 **{d_str}**")
                                 for ed in d_list:
                                     st.markdown(f"**{ed['nickname']}** ({ed['emotion']}):")
-                                    st.markdown(f"""
-                                        <div class="diary-note-container" style="margin-bottom: 12px;">
-                                            <div style="white-space: pre-wrap;">{ed['content']}</div>
-                                        </div>
-                                    """, unsafe_allow_html=True)
+                                    if ed['content']:
+                                        st.markdown(f"""
+                                            <div class="diary-note-container" style="margin-bottom: 12px;">
+                                                <div style="white-space: pre-wrap;">{ed['content']}</div>
+                                            </div>
+                                        """, unsafe_allow_html=True)
+                                    if ed['drawing']:
+                                        st.image(ed['drawing'], caption=f"{ed['nickname']}님의 그림 🎨", use_column_width=True)
                                 st.markdown("---")
                         else:
                             st.info("작성된 교환일기가 없습니다.")
@@ -1741,7 +1755,7 @@ else:
         else:
             st.info("등록된 친구가 없습니다. 사이드바의 '친구 관리'에서 친구를 먼저 추가해 주세요!")
 
-    # PAGE 5: 비밀/공개 일기 에디터 (오늘의 질문 포함)
+    # PAGE 5: 비밀/공개 일기 에디터 (오늘의 질문 및 그림판 포함)
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
@@ -1752,7 +1766,7 @@ else:
         editor_mode = st.radio("일기장 스타일 선택:", ["📖 아날로그 종이 노트", "💻 디지털 모던 노트"], horizontal=True)
         
         diaries = get_user_diaries(current_user, is_public_flag=is_pub)
-        has_ex = s_date in diaries and bool(diaries[s_date].get("content", "").strip())
+        has_ex = s_date in diaries and (bool(diaries[s_date].get("content", "").strip()) or bool(diaries[s_date].get("drawing", "")))
         ex_data = diaries.get(s_date, {})
 
         idx = EMOJI_LIST.index(ex_data.get("emotion")) if ex_data.get("emotion") in EMOJI_LIST else 0
@@ -1764,15 +1778,154 @@ else:
                 <div class="diary-note-container">
                     <div style="font-weight: bold; margin-bottom: 8px; opacity: 0.8;">📖 {s_date}의 기록 ({sel_emo})</div>
             """, unsafe_allow_html=True)
-            txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=280, label_visibility="collapsed")
+            txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=220, label_visibility="collapsed")
             st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.markdown(f"""
                 <div class="diary-digital-container">
                     <div style="font-weight: bold; margin-bottom: 8px;">💻 {s_date}의 디지털 기록 ({sel_emo})</div>
             """, unsafe_allow_html=True)
-            txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=280, label_visibility="collapsed")
+            txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=220, label_visibility="collapsed")
             st.markdown("</div>", unsafe_allow_html=True)
+
+        # ---------------------------------------------------------
+        # 🎨 그림일기 캔버스 추가 기능
+        # ---------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 🎨 그림 추가하기")
+        
+        drawing_data = ex_data.get("drawing", "")
+        has_existing_drawing = bool(drawing_data)
+
+        # 컴포넌트 간 통신을 위한 캔버스 UI HTML/JS
+        canvas_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{
+                    background-color: {theme_cfg['card_bg']};
+                    color: {theme_cfg['text']};
+                    font-family: sans-serif;
+                    margin: 0;
+                    padding: 10px;
+                }}
+                .canvas-box {{
+                    border: 2px dashed {theme_cfg['card_border']};
+                    border-radius: 12px;
+                    background-color: {theme_cfg['paper_bg']};
+                    display: inline-block;
+                    position: relative;
+                    cursor: crosshair;
+                }}
+                canvas {{
+                    display: block;
+                    touch-action: none;
+                }}
+                .toolbar {{
+                    margin-bottom: 10px;
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                    flex-wrap: wrap;
+                }}
+                button {{
+                    background: {main_color};
+                    color: white;
+                    border: none;
+                    padding: 6px 14px;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    cursor: pointer;
+                }}
+                button:hover {{ opacity: 0.85; }}
+            </style>
+        </head>
+        <body>
+            <div class="toolbar">
+                <label>색상: <input type="color" id="colorPicker" value="{main_color}"></label>
+                <label>펜 두께: <input type="range" id="brushSize" min="1" max="20" value="4"></label>
+                <button onclick="clearCanvas()">전체 지우기</button>
+            </div>
+            <div class="canvas-box">
+                <canvas id="paintCanvas" width="500" height="320"></canvas>
+            </div>
+            <input type="hidden" id="drawingResult" value="">
+
+            <script>
+                const canvas = document.getElementById('paintCanvas');
+                const ctx = canvas.getContext('2d');
+                let painting = false;
+
+                // 기존 그림 불러오기
+                const savedImgData = "{drawing_data}";
+                if (savedImgData) {{
+                    const img = new Image();
+                    img.onload = function() {{
+                        ctx.drawImage(img, 0, 0);
+                    }};
+                    img.src = savedImgData;
+                }} else {{
+                    ctx.fillStyle = "{theme_cfg['paper_bg']}";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }}
+
+                function startPosition(e) {{
+                    painting = true;
+                    draw(e);
+                }}
+                function endPosition() {{
+                    painting = false;
+                    ctx.beginPath();
+                    updateParent();
+                }}
+                function draw(e) {{
+                    if (!painting) return;
+                    ctx.lineWidth = document.getElementById('brushSize').value;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = document.getElementById('colorPicker').value;
+
+                    const rect = canvas.getBoundingClientRect();
+                    const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+                    const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+                    
+                    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+                }}
+
+                function clearCanvas() {{
+                    ctx.fillStyle = "{theme_cfg['paper_bg']}";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    updateParent();
+                }}
+
+                function updateParent() {{
+                    const dataURL = canvas.toDataURL();
+                    const parentInput = window.parent.document.querySelector('input[aria-label="hidden_drawing_input"]');
+                    if (parentInput) {{
+                        parentInput.value = dataURL;
+                        parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    }}
+                }}
+
+                canvas.addEventListener('mousedown', startPosition);
+                canvas.addEventListener('mouseup', endPosition);
+                canvas.addEventListener('mousemove', draw);
+                canvas.addEventListener('touchstart', startPosition);
+                canvas.addEventListener('touchend', endPosition);
+                canvas.addEventListener('touchmove', draw);
+            </script>
+        </body>
+        </html>
+        """
+
+        # Streamlit 숨겨진 입력창으로 그림 데이터 동기화
+        drawing_input_val = st.text_input("hidden_drawing_input", value=drawing_data, label_visibility="collapsed", key=f"drawing_hidden_{s_date}")
+        
+        # 컴포넌트 렌더링
+        components.html(canvas_html, height=390)
 
         # ---------------------------------------------------------
         # 💡 오늘의 질문 코너 (일기장 맨 밑)
@@ -1811,18 +1964,20 @@ else:
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
             if st.button("💾 일기 저장", use_container_width=True):
-                if txt.strip():
+                if txt.strip() or drawing_input_val.strip():
                     final_is_pub = 1 if pub_mode == "🌐 전체 공개" else 0
                     final_allow_str = ",".join(selected_allow_friends) if pub_mode == "👥 선택한 친구에게만 공개" else ""
                     
-                    save_diary(current_user, s_date, sel_emoji, txt.strip(), final_is_pub, final_allow_str)
+                    save_diary(current_user, s_date, sel_emoji, txt.strip(), drawing_input_val.strip(), final_is_pub, final_allow_str)
                     
                     if daily_ans_input.strip():
                         save_daily_answer(current_user, s_date, daily_q, daily_ans_input.strip())
                     
-                    st.success("일기와 오늘의 질문 답변이 저장되었습니다!")
+                    st.success("일기와 그림, 오늘의 질문 답변이 저장되었습니다!")
                     st.session_state.page = "public_calendar" if final_is_pub or final_allow_str else "secret_calendar"
                     st.rerun()
+                else:
+                    st.warning("내용이나 그림을 최소한 하나 이상 입력해 주세요.")
         with col2:
             if st.button("🗓️ 달력으로 돌아가기", use_container_width=True):
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
@@ -1834,7 +1989,7 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 6: 교환일기 에디터
+    # PAGE 6: 교환일기 에디터 (그림 추가 포함)
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
         eid = st.session_state.current_exchange_id
@@ -1853,12 +2008,15 @@ else:
             for od in other_e_diaries:
                 p_vis = "🔒 둘만 보기" if od.get("is_public", 0) == 0 else "🌐 모두에게 공개"
                 st.markdown(f"**{od['nickname']}**님의 기록 ({od['emotion']}) - *{p_vis}*")
-                st.markdown(f"""
-                    <div class="diary-note-container" style="margin-bottom: 20px;">
-                        <div style="white-space: pre-wrap;">{od['content']}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            st.markdown("---")
+                if od['content']:
+                    st.markdown(f"""
+                        <div class="diary-note-container" style="margin-bottom: 12px;">
+                            <div style="white-space: pre-wrap;">{od['content']}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                if od['drawing']:
+                    st.image(od['drawing'], caption=f"{od['nickname']}님의 그림 🎨", use_column_width=True)
+                st.markdown("---")
 
         st.subheader("내 교환일기 쓰기")
         idx = EMOJI_LIST.index(my_e_diary['emotion']) if my_e_diary and my_e_diary['emotion'] in EMOJI_LIST else 0
@@ -1870,15 +2028,134 @@ else:
                 <div class="diary-note-container">
                     <div style="font-weight: bold; margin-bottom: 8px; opacity: 0.8;">📖 나의 교환일기 기록 ({sel_emo})</div>
             """, unsafe_allow_html=True)
-            txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=250, label_visibility="collapsed")
+            txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=200, label_visibility="collapsed")
             st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.markdown(f"""
                 <div class="diary-digital-container">
                     <div style="font-weight: bold; margin-bottom: 8px;">💻 나의 교환일기 기록 ({sel_emo})</div>
             """, unsafe_allow_html=True)
-            txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=250, label_visibility="collapsed")
+            txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=200, label_visibility="collapsed")
             st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("### 🎨 그림 추가하기")
+        ex_drawing_data = my_e_diary.get("drawing", "") if my_e_diary else ""
+
+        ex_canvas_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{
+                    background-color: {theme_cfg['card_bg']};
+                    color: {theme_cfg['text']};
+                    font-family: sans-serif;
+                    margin: 0;
+                    padding: 10px;
+                }}
+                .canvas-box {{
+                    border: 2px dashed {theme_cfg['card_border']};
+                    border-radius: 12px;
+                    background-color: {theme_cfg['paper_bg']};
+                    display: inline-block;
+                    position: relative;
+                    cursor: crosshair;
+                }}
+                canvas {{
+                    display: block;
+                    touch-action: none;
+                }}
+                .toolbar {{
+                    margin-bottom: 10px;
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                    flex-wrap: wrap;
+                }}
+                button {{
+                    background: {main_color};
+                    color: white;
+                    border: none;
+                    padding: 6px 14px;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    cursor: pointer;
+                }}
+                button:hover {{ opacity: 0.85; }}
+            </style>
+        </head>
+        <body>
+            <div class="toolbar">
+                <label>색상: <input type="color" id="colorPicker" value="{main_color}"></label>
+                <label>펜 두께: <input type="range" id="brushSize" min="1" max="20" value="4"></label>
+                <button onclick="clearCanvas()">전체 지우기</button>
+            </div>
+            <div class="canvas-box">
+                <canvas id="paintCanvas" width="500" height="320"></canvas>
+            </div>
+
+            <script>
+                const canvas = document.getElementById('paintCanvas');
+                const ctx = canvas.getContext('2d');
+                let painting = false;
+
+                const savedImgData = "{ex_drawing_data}";
+                if (savedImgData) {{
+                    const img = new Image();
+                    img.onload = function() {{ ctx.drawImage(img, 0, 0); }};
+                    img.src = savedImgData;
+                }} else {{
+                    ctx.fillStyle = "{theme_cfg['paper_bg']}";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }}
+
+                function startPosition(e) {{ painting = true; draw(e); }}
+                function endPosition() {{ painting = false; ctx.beginPath(); updateParent(); }}
+                function draw(e) {{
+                    if (!painting) return;
+                    ctx.lineWidth = document.getElementById('brushSize').value;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = document.getElementById('colorPicker').value;
+
+                    const rect = canvas.getBoundingClientRect();
+                    const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+                    const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+                    
+                    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+                }}
+
+                function clearCanvas() {{
+                    ctx.fillStyle = "{theme_cfg['paper_bg']}";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    updateParent();
+                }}
+
+                function updateParent() {{
+                    const dataURL = canvas.toDataURL();
+                    const parentInput = window.parent.document.querySelector('input[aria-label="hidden_ex_drawing_input"]');
+                    if (parentInput) {{
+                        parentInput.value = dataURL;
+                        parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    }}
+                }}
+
+                canvas.addEventListener('mousedown', startPosition);
+                canvas.addEventListener('mouseup', endPosition);
+                canvas.addEventListener('mousemove', draw);
+                canvas.addEventListener('touchstart', startPosition);
+                canvas.addEventListener('touchend', endPosition);
+                canvas.addEventListener('touchmove', draw);
+            </script>
+        </body>
+        </html>
+        """
+
+        ex_drawing_input_val = st.text_input("hidden_ex_drawing_input", value=ex_drawing_data, label_visibility="collapsed", key=f"ex_drawing_hidden_{s_date}")
+        components.html(ex_canvas_html, height=390)
 
         curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
         ex_public_choice = st.radio(
@@ -1892,11 +2169,13 @@ else:
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button("💌 교환일기 저장", use_container_width=True):
-                if txt.strip():
-                    save_exchange_diary(eid, s_date, current_user, current_nickname, sel_emoji, txt.strip(), is_ex_public)
+                if txt.strip() or ex_drawing_input_val.strip():
+                    save_exchange_diary(eid, s_date, current_user, current_nickname, sel_emoji, txt.strip(), ex_drawing_input_val.strip(), is_ex_public)
                     st.success("교환일기가 성공적으로 저장되었습니다!")
                     st.session_state.page = "exchange_calendar"
                     st.rerun()
+                else:
+                    st.warning("내용이나 그림을 최소한 하나 이상 입력해 주세요.")
         with col2:
             if st.button("🗓️ 교환 달력으로 돌아가기", use_container_width=True):
                 st.session_state.page = "exchange_calendar"
