@@ -111,6 +111,26 @@ def init_db():
         )
     ''')
 
+    # 교환일기 방 테이블 (다대다 지원)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS exchange_rooms (
+            exchange_id TEXT PRIMARY KEY,
+            title TEXT,
+            creator_username TEXT,
+            exchange_type TEXT DEFAULT '친구',
+            exchange_start_date TEXT
+        )
+    ''')
+
+    # 교환일기 방 멤버 테이블
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS exchange_members (
+            exchange_id TEXT,
+            username TEXT,
+            PRIMARY KEY (exchange_id, username)
+        )
+    ''')
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS exchange_diaries (
             exchange_id TEXT,
@@ -180,6 +200,17 @@ def init_db():
             status TEXT DEFAULT 'pending',
             FOREIGN KEY (sender_username) REFERENCES users(username),
             FOREIGN KEY (receiver_username) REFERENCES users(username)
+        )
+    ''')
+
+    # 교환일기 초대/신청 테이블
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS exchange_invites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exchange_id TEXT,
+            sender_username TEXT,
+            receiver_username TEXT,
+            status TEXT DEFAULT 'pending'
         )
     ''')
 
@@ -278,31 +309,6 @@ def update_user_theme(username, new_theme, new_main_color, new_sub_color):
     conn.close()
     push_db_to_github(f"Update theme for user {username}")
 
-def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str):
-    conn = get_connection()
-    c = conn.cursor()
-    cleaned_code = partner_code.strip().upper()
-    c.execute("SELECT username FROM users WHERE UPPER(invite_code) = ?", (cleaned_code,))
-    partner = c.fetchone()
-    
-    if not partner:
-        conn.close()
-        return False, "존재하지 않는 초대코드입니다."
-    
-    partner_username = partner[0]
-    if partner_username == my_username:
-        conn.close()
-        return False, "자신의 초대코드는 입력할 수 없습니다."
-
-    eid = f"ex_{min(my_username, partner_username)}_{max(my_username, partner_username)}"
-    
-    c.execute("UPDATE users SET exchange_id = ?, exchange_type = ?, exchange_start_date = ? WHERE username IN (?, ?)", 
-              (eid, ex_type, start_date_str, my_username, partner_username))
-    conn.commit()
-    conn.close()
-    push_db_to_github("Exchange connected")
-    return True, eid
-
 def send_friend_request(my_username, friend_code):
     conn = get_connection()
     c = conn.cursor()
@@ -400,6 +406,119 @@ def delete_friend(friendship_id):
     conn.commit()
     conn.close()
     push_db_to_github("Friend deleted")
+
+# --- 다대다 교환일기 관련 함수 ---
+def create_exchange_room(title, creator_username, ex_type, start_date):
+    conn = get_connection()
+    c = conn.cursor()
+    eid = f"ex_{creator_username}_{int(datetime.datetime.now().timestamp())}"
+    c.execute("INSERT INTO exchange_rooms (exchange_id, title, creator_username, exchange_type, exchange_start_date) VALUES (?, ?, ?, ?, ?)",
+              (eid, title, creator_username, ex_type, start_date))
+    c.execute("INSERT INTO exchange_members (exchange_id, username) VALUES (?, ?)", (eid, creator_username))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Exchange room created")
+    return eid
+
+def get_user_exchange_rooms(username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT r.exchange_id, r.title, r.creator_username, r.exchange_type, r.exchange_start_date 
+        FROM exchange_rooms r
+        JOIN exchange_members m ON r.exchange_id = m.exchange_id
+        WHERE m.username = ?
+    ''', (username,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"exchange_id": r[0], "title": r[1], "creator_username": r[2], "exchange_type": r[3], "exchange_start_date": r[4]} for r in rows]
+
+def get_exchange_room_info(exchange_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT exchange_id, title, creator_username, exchange_type, exchange_start_date FROM exchange_rooms WHERE exchange_id = ?", (exchange_id,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {"exchange_id": row[0], "title": row[1], "creator_username": row[2], "exchange_type": row[3], "exchange_start_date": row[4]}
+    return None
+
+def get_exchange_room_members(exchange_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT u.username, u.nickname, u.profile_icon, u.status_message 
+        FROM exchange_members m
+        JOIN users u ON m.username = u.username
+        WHERE m.exchange_id = ?
+    ''', (exchange_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"username": r[0], "nickname": r[1], "profile_icon": r[2] or '🧸', "status_message": r[3] or ''} for r in rows]
+
+def send_exchange_invite(exchange_id, sender_username, receiver_username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id FROM exchange_members WHERE exchange_id = ? AND username = ?", (exchange_id, receiver_username))
+    if c.fetchone():
+        conn.close()
+        return False, "이미 참여 중인 멤버입니다."
+    
+    c.execute("SELECT id FROM exchange_invites WHERE exchange_id = ? AND receiver_username = ? AND status = 'pending'", (exchange_id, receiver_username))
+    if c.fetchone():
+        conn.close()
+        return False, "이미 초대 요청을 보냈습니다."
+
+    c.execute("INSERT INTO exchange_invites (exchange_id, sender_username, receiver_username, status) VALUES (?, ?, ?, 'pending')",
+              (exchange_id, sender_username, receiver_username))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Exchange invite sent")
+    return True, "교환일기 초대장을 보냈습니다!"
+
+def get_pending_exchange_invites(username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        ei.id, ei.exchange_id, r.title, u.nickname, u.profile_icon 
+        FROM exchange_invites ei
+        JOIN exchange_rooms r ON ei.exchange_id = r.exchange_id
+        JOIN users u ON ei.sender_username = u.username
+        WHERE ei.receiver_username = ? AND ei.status = 'pending'
+    '''.replace("ei.id", "ei.id")) # Syntax guard
+    c.execute('''
+        SELECT ei.id, ei.exchange_id, r.title, u.nickname, u.profile_icon 
+        FROM exchange_invites ei
+        JOIN exchange_rooms r ON ei.exchange_id = r.exchange_id
+        JOIN users u ON ei.sender_username = u.username
+        WHERE ei.receiver_username = ? AND ei.status = 'pending'
+    ''', (username,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r[0], "exchange_id": r[1], "title": r[2], "sender_nickname": r[3], "sender_icon": r[4] or '🧸'} for r in rows]
+
+def accept_exchange_invite(invite_id, my_username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT exchange_id FROM exchange_invites WHERE id = ? AND receiver_username = ?", (invite_id, my_username))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return
+    eid = row[0]
+    c.execute("UPDATE exchange_invites SET status = 'accepted' WHERE id = ?", (invite_id,))
+    c.execute("INSERT OR IGNORE INTO exchange_members (exchange_id, username) VALUES (?, ?)", (eid, my_username))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Exchange invite accepted")
+
+def reject_exchange_invite(invite_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM exchange_invites WHERE id = ?", (invite_id,))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Exchange invite rejected")
 
 def get_user_ddays(username):
     conn = get_connection()
@@ -736,12 +855,8 @@ if "sub_color" not in st.session_state:
     st.session_state.sub_color = "#06B6D4"
 if "invite_code" not in st.session_state:
     st.session_state.invite_code = ""
-if "exchange_id" not in st.session_state:
-    st.session_state.exchange_id = ""
-if "exchange_type" not in st.session_state:
-    st.session_state.exchange_type = "연인"
-if "exchange_start_date" not in st.session_state:
-    st.session_state.exchange_start_date = ""
+if "current_exchange_id" not in st.session_state:
+    st.session_state.current_exchange_id = ""
 
 current_theme_key = st.session_state.theme if st.session_state.theme in THEME_STYLES else "👁️‍🗨️ 드림코어"
 theme_cfg = THEME_STYLES[current_theme_key]
@@ -750,7 +865,7 @@ sub_color = st.session_state.sub_color if st.session_state.sub_color else theme_
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입 (아날로그 노트 & 디지털 노트 스타일 분기)
+# 동적 CSS 주입
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -770,7 +885,6 @@ if st.session_state.user is not None:
             letter-spacing: 1px;
         }}
         
-        /* 📝 아날로그 종이 노트 스타일 (테마별 맞춤 색상) */
         .diary-note-container {{
             background-color: {theme_cfg['paper_bg']} !important;
             color: {theme_cfg['paper_text']} !important;
@@ -799,7 +913,6 @@ if st.session_state.user is not None:
             resize: vertical !important;
         }}
 
-        /* 💻 디지털 모던 노트 스타일 */
         .diary-digital-container {{
             background-color: {theme_cfg['card_bg']} !important;
             color: {theme_cfg['text']} !important;
@@ -940,7 +1053,7 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname, birthdate, profile_icon, status_message, theme, m_color, s_color, inv_code, e_id, e_type, e_sdate = login_user(username_input, password_input)
+                is_success, nickname, birthdate, profile_icon, status_message, theme, m_color, s_color, inv_code, _, _, _ = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
@@ -951,9 +1064,14 @@ if st.session_state.user is None:
                     st.session_state.main_color = m_color
                     st.session_state.sub_color = s_color
                     st.session_state.invite_code = inv_code
-                    st.session_state.exchange_id = e_id
-                    st.session_state.exchange_type = e_type
-                    st.session_state.exchange_start_date = e_sdate
+                    
+                    # 참여중인 첫번째 교환일기 방 자동 선택
+                    my_rooms = get_user_exchange_rooms(username_input)
+                    if my_rooms:
+                        st.session_state.current_exchange_id = my_rooms[0]["exchange_id"]
+                    else:
+                        st.session_state.current_exchange_id = ""
+
                     st.session_state.page = "secret_calendar"
                     st.success(f"{st.session_state.nickname}님 환영합니다!")
                     st.rerun()
@@ -1005,19 +1123,9 @@ else:
     if current_status_message:
         st.sidebar.caption(f"💬 *{current_status_message}*")
     st.sidebar.info(f"내 초대코드: **{st.session_state.invite_code}**")
-    
-    if st.session_state.exchange_id and st.session_state.exchange_start_date:
-        try:
-            s_dt = datetime.datetime.strptime(st.session_state.exchange_start_date, "%Y-%m-%d").date()
-            d_day = (today_dt - s_dt).days + 1
-            label = "함께한 지" if st.session_state.exchange_type == "연인" else "교환일기 시작"
-            icon = "👩‍❤️‍👨" if st.session_state.exchange_type == "연인" else "🤝"
-            st.sidebar.success(f"{icon} {label} **{d_day}일**째 ✨")
-        except ValueError:
-            pass
 
     # =========================================================
-    # 사이드바 칸 나누기 및 메뉴 구성
+    # 사이드바 메뉴 구성
     # =========================================================
     st.sidebar.markdown("---")
     
@@ -1066,7 +1174,7 @@ else:
                 st.session_state.nickname = cleaned_nick
                 st.session_state.birthdate = new_bday_str
                 st.session_state.status_message = edit_status.strip()
-                st.success("프로필이 개성 있게 수정되었습니다!")
+                st.success("프로필이 수정되었습니다!")
                 st.rerun()
 
     with st.sidebar.expander("🎨 테마관리 (분위기 & 색상)"):
@@ -1092,7 +1200,7 @@ else:
             st.success("테마가 적용되었습니다!")
             st.rerun()
 
-    # 2. 일정관리 (디데이 & 일정추가)
+    # 2. 일정관리
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📅 일정관리")
 
@@ -1137,7 +1245,7 @@ else:
             else:
                 st.warning("디데이 제목을 입력해 주세요.")
 
-    # 3. 친구기능 (친구관리 & 교환일기 추가)
+    # 3. 친구기능 & 교환일기 초대 승인
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 👥 친구기능")
     with st.sidebar.expander("👥 친구 관리"):
@@ -1152,25 +1260,41 @@ else:
             else:
                 st.warning("초대코드를 입력해 주세요.")
 
+        # 받은 친구 요청
         pending_reqs = get_pending_friend_requests(current_user)
         if pending_reqs:
             st.markdown("---")
             st.markdown("📬 **받은 친구 요청**")
             for req in pending_reqs:
                 st.write(f"{req['sender_icon']} **{req['sender_nickname']}**")
-                if req['sender_status']:
-                    st.caption(f"💬 {req['sender_status']}")
-                
                 rc1, rc2 = st.columns(2)
                 with rc1:
                     if st.button("✔️ 승인", key=f"accept_req_{req['id']}"):
                         accept_friend_request(req['id'], current_user)
-                        st.success(f"'{req['sender_nickname']}'님의 요청을 승인했습니다!")
+                        st.success(f"'{req['sender_nickname']}'님과 친구가 되었습니다!")
                         st.rerun()
                 with rc2:
                     if st.button("❌ 거절", key=f"reject_req_{req['id']}"):
                         reject_friend_request(req['id'])
-                        st.info("요청을 거절했습니다.")
+                        st.rerun()
+
+        # 받은 교환일기 초대
+        pending_ex_invites = get_pending_exchange_invites(current_user)
+        if pending_ex_invites:
+            st.markdown("---")
+            st.markdown("💌 **받은 교환일기 초대**")
+            for einv in pending_ex_invites:
+                st.write(f"{einv['sender_icon']} **{einv['sender_nickname']}**님의 교환일기 방 **[{einv['title']}]** 초대")
+                ec1, ec2 = st.columns(2)
+                with ec1:
+                    if st.button("✔️ 수락", key=f"accept_einv_{einv['id']}"):
+                        accept_exchange_invite(einv['id'], current_user)
+                        st.session_state.current_exchange_id = einv['exchange_id']
+                        st.success("교환일기에 참여하였습니다!")
+                        st.rerun()
+                with ec2:
+                    if st.button("❌ 거절", key=f"reject_einv_{einv['id']}"):
+                        reject_exchange_invite(einv['id'])
                         st.rerun()
         
         st.markdown("---")
@@ -1192,6 +1316,19 @@ else:
                 if f_stat:
                     st.caption(f"💬 {f_stat}")
                 
+                # 친구에게 교환일기 초대 보내기 버튼
+                my_rooms = get_user_exchange_rooms(current_user)
+                if my_rooms:
+                    room_options = {r['title']: r['exchange_id'] for r in my_rooms}
+                    sel_room_title = st.selectbox("내 교환일기로 초대", list(room_options.keys()), key=f"invite_room_sel_{f['friend_username']}")
+                    if st.button("💌 교환일기 초대 보내기", key=f"btn_send_einv_{f['friend_username']}"):
+                        target_eid = room_options[sel_room_title]
+                        ok_msg, msg_text = send_exchange_invite(target_eid, current_user, f['friend_username'])
+                        if ok_msg:
+                            st.success(msg_text)
+                        else:
+                            st.warning(msg_text)
+
                 if st.button("🗑️ 친구 삭제", key=f"del_f_{f['id']}"):
                     delete_friend(f['id'])
                     st.rerun()
@@ -1199,28 +1336,22 @@ else:
         else:
             st.caption("등록된 친구가 없습니다.")
 
-    with st.sidebar.expander("💌 교환일기 추가"):
-        st.write("소중한 친구/연인의 초대코드를 입력하여 새로운 교환일기를 시작하세요!")
-        partner_code_input = st.text_input("상대방 초대코드")
-        ex_type_input = st.radio("관계", ["연인", "친구"], horizontal=True)
-        ex_start_input = st.date_input("시작일", value=today_dt, max_value=today_dt)
-        if st.button("교환일기 연결 시작", use_container_width=True):
-            if partner_code_input.strip():
-                is_ok, msg = connect_exchange_by_code(
-                    current_user, partner_code_input.strip().upper(), ex_type_input, ex_start_input.strftime("%Y-%m-%d")
-                )
-                if is_ok:
-                    st.session_state.exchange_id = msg
-                    st.session_state.exchange_type = ex_type_input
-                    st.session_state.exchange_start_date = ex_start_input.strftime("%Y-%m-%d")
-                    st.success("교환일기가 시작되었습니다! 🎉")
-                    st.rerun()
-                else:
-                    st.error(msg)
+    with st.sidebar.expander("💌 다대다 교환일기 만들기"):
+        st.write("여러 명이서 함께 쓸 수 있는 새로운 교환일기 모임을 만드세요!")
+        new_room_title = st.text_input("교환일기 제목 (방 이름)", placeholder="예: 우리들의 힐링 노트")
+        new_room_type = st.radio("모임 성격", ["친구", "연인", "스터디/모임"], horizontal=True, key="room_type_radio")
+        new_room_start = st.date_input("시작일", value=today_dt, max_value=today_dt, key="room_start_date")
+        
+        if st.button("✨ 새 교환일기 만들기", use_container_width=True):
+            if new_room_title.strip():
+                eid = create_exchange_room(new_room_title.strip(), current_user, new_room_type, new_room_start.strftime("%Y-%m-%d"))
+                st.session_state.current_exchange_id = eid
+                st.success("교환일기 방이 생성되었습니다!")
+                st.rerun()
             else:
-                st.warning("초대코드를 입력해 주세요.")
+                st.warning("교환일기 제목을 입력해 주세요.")
 
-    # 4. 일기 (교환일기/비밀일기/공개일기 선택)
+    # 4. 일기 메뉴
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📖 일기")
     menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기", "👥 친구 일기 구경하기"]
@@ -1233,7 +1364,8 @@ else:
         st.session_state.page = "schedule_calendar"
         st.rerun()
     elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor", "exchange_setup"]:
-        if st.session_state.exchange_id:
+        my_rooms = get_user_exchange_rooms(current_user)
+        if my_rooms:
             st.session_state.page = "exchange_calendar"
         else:
             st.session_state.page = "exchange_setup"
@@ -1249,7 +1381,7 @@ else:
     if st.sidebar.button("🔒 로그아웃", use_container_width=True):
         st.session_state.user = None
         st.session_state.nickname = None
-        st.session_state.exchange_id = ""
+        st.session_state.current_exchange_id = ""
         st.session_state.page = "secret_calendar"
         st.rerun()
 
@@ -1369,38 +1501,49 @@ else:
                 st.session_state.page = "schedule_calendar"
                 st.rerun()
 
-    # PAGE 3-0: 💌 교환일기 연결 설정
+    # PAGE 3-0: 💌 교환일기 방 없을 때 생성 화면
     elif st.session_state.page == "exchange_setup":
-        st.header("💌 소중한 사람과 교환일기 시작하기")
-        st.write("소중한 친구나 연인의 초대코드를 입력하여 둘만의 교환일기를 시작해보세요!")
+        st.header("💌 함께 쓰는 다대다 교환일기")
+        st.write("아직 참여 중인 교환일기 방이 없습니다. 새로운 교환일기 방을 만들거나 친구의 초대를 기다려주세요!")
         
-        st.info(f"내 초대코드: **{st.session_state.invite_code}** (상대방에게 전달해 주세요)")
+        new_title = st.text_input("교환일기 방 제목", placeholder="예: 우리들의 비밀 수다방")
+        room_type = st.radio("관계/모임 성격", ["친구", "연인", "스터디/모임"], horizontal=True, key="setup_room_type")
+        start_dt = st.date_input("시작일", value=today_dt, max_value=today_dt, key="setup_start_dt")
         
-        partner_code_input = st.text_input("상대방 초대코드 입력")
-        ex_type_input = st.radio("관계 선택", ["연인", "친구"], horizontal=True)
-        ex_start_input = st.date_input("시작일 선택", value=today_dt, max_value=today_dt)
-        
-        if st.button("💌 교환일기 시작하기", use_container_width=True):
-            if partner_code_input.strip():
-                is_ok, msg = connect_exchange_by_code(
-                    current_user, partner_code_input.strip().upper(), ex_type_input, ex_start_input.strftime("%Y-%m-%d")
-                )
-                if is_ok:
-                    st.session_state.exchange_id = msg
-                    st.session_state.exchange_type = ex_type_input
-                    st.session_state.exchange_start_date = ex_start_input.strftime("%Y-%m-%d")
-                    st.success("교환일기가 성공적으로 시작되었습니다! 🎉")
-                    st.session_state.page = "exchange_calendar"
-                    st.rerun()
-                else:
-                    st.error(msg)
+        if st.button("✨ 교환일기 방 만들기", use_container_width=True):
+            if new_title.strip():
+                eid = create_exchange_room(new_title.strip(), current_user, room_type, start_dt.strftime("%Y-%m-%d"))
+                st.session_state.current_exchange_id = eid
+                st.success("교환일기 방이 생성되었습니다!")
+                st.session_state.page = "exchange_calendar"
+                st.rerun()
             else:
-                st.warning("상대방의 초대코드를 입력해 주세요.")
+                st.warning("방 제목을 입력해 주세요.")
 
-    # PAGE 3-1: 💌 교환일기 달력
+    # PAGE 3-1: 💌 교환일기 달력 (다대다 지원)
     elif st.session_state.page == "exchange_calendar":
-        st.header(f"💌 우리들의 소중한 교환일기 ({st.session_state.exchange_type})")
-        ex_diaries = get_exchange_diaries(st.session_state.exchange_id)
+        my_rooms = get_user_exchange_rooms(current_user)
+        if not my_rooms:
+            st.session_state.page = "exchange_setup"
+            st.rerun()
+
+        room_dict = {f"{r['title']} ({r['exchange_type']})": r for r in my_rooms}
+        current_room = next((r for r in my_rooms if r['exchange_id'] == st.session_state.current_exchange_id), my_rooms[0])
+        
+        current_room_label = f"{current_room['title']} ({current_room['exchange_type']})"
+        selected_room_label = st.selectbox("참여 중인 교환일기 선택", list(room_dict.keys()), index=list(room_dict.keys()).index(current_room_label))
+        
+        st.session_state.current_exchange_id = room_dict[selected_room_label]['exchange_id']
+        active_eid = st.session_state.current_exchange_id
+        
+        room_info = get_exchange_room_info(active_eid)
+        members = get_exchange_room_members(active_eid)
+        
+        st.header(f"💌 {room_info['title']} 교환일기")
+        member_str = ", ".join([f"{m['profile_icon']} {m['nickname']}" for m in members])
+        st.info(f"👥 **참여 멤버 ({len(members)}명)**: {member_str}")
+
+        ex_diaries = get_exchange_diaries(active_eid)
 
         calendar_events = []
         for date_str, diary_list in ex_diaries.items():
@@ -1505,9 +1648,7 @@ else:
             
             st.markdown(f"### ✨ {selected_friend['friend_icon']} **{f_nick}** 님의 일기장")
             
-            f_exchange_id = f"ex_{min(current_user, f_uname)}_{max(current_user, f_uname)}"
-            
-            tab_f1, tab_f2 = st.tabs(["🌐 공개 일기", "💌 함께 쓴 교환일기"])
+            tab_f1, tab_f2 = st.tabs(["🌐 공개 일기", "💌 함께 참여중인 교환일기"])
             
             with tab_f1:
                 all_pubs = get_all_public_diaries(current_user)
@@ -1530,24 +1671,33 @@ else:
                     st.info(f"'{f_nick}'님이 작성한 공개 일기가 없습니다.")
             
             with tab_f2:
-                ex_diaries = get_exchange_diaries(f_exchange_id)
-                if ex_diaries:
-                    for d_str, d_list in sorted(ex_diaries.items(), reverse=True):
-                        st.subheader(f"📅 {d_str}")
-                        for ed in d_list:
-                            st.markdown(f"**{ed['nickname']}** ({ed['emotion']}):")
-                            st.markdown(f"""
-                                <div class="diary-note-container" style="margin-bottom: 12px;">
-                                    <div style="white-space: pre-wrap;">{ed['content']}</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        st.markdown("---")
+                my_rooms = get_user_exchange_rooms(current_user)
+                friend_rooms = get_user_exchange_rooms(f_uname)
+                common_rooms = [r for r in my_rooms if r['exchange_id'] in [fr['exchange_id'] for fr in friend_rooms]]
+                
+                if common_rooms:
+                    for cr in common_rooms:
+                        st.subheader(f"📖 교환일기 방: {cr['title']}")
+                        ex_diaries = get_exchange_diaries(cr['exchange_id'])
+                        if ex_diaries:
+                            for d_str, d_list in sorted(ex_diaries.items(), reverse=True):
+                                st.markdown(f"📅 **{d_str}**")
+                                for ed in d_list:
+                                    st.markdown(f"**{ed['nickname']}** ({ed['emotion']}):")
+                                    st.markdown(f"""
+                                        <div class="diary-note-container" style="margin-bottom: 12px;">
+                                            <div style="white-space: pre-wrap;">{ed['content']}</div>
+                                        </div>
+                                    """, unsafe_allow_html=True)
+                                st.markdown("---")
+                        else:
+                            st.info("작성된 교환일기가 없습니다.")
                 else:
-                    st.info(f"'{f_nick}'님과 함께 작성한 교환일기가 아직 없습니다.")
+                    st.info(f"'{f_nick}'님과 함께 참여 중인 교환일기 방이 없습니다.")
         else:
             st.info("등록된 친구가 없습니다. 사이드바의 '친구 관리'에서 친구를 먼저 추가해 주세요!")
 
-    # PAGE 5: 비밀/공개 일기 에디터 (아날로그/디지털 선택 기능 추가)
+    # PAGE 5: 비밀/공개 일기 에디터
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
@@ -1601,7 +1751,7 @@ else:
                     if st.checkbox(f"{f['friend_icon']} {f['friend_nickname']}", value=is_checked, key=f"chk_friend_{f['friend_username']} {s_date}"):
                         selected_allow_friends.append(f['friend_username'])
             else:
-                st.info("등록된 친구가 없습니다. 사이드바 '친구기능'에서 친구를 먼저 추가해 주세요!")
+                st.info("등록된 친구가 없습니다.")
 
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
@@ -1625,34 +1775,35 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 6: 교환일기 에디터 (아날로그/디지털 선택 기능 추가)
+    # PAGE 6: 교환일기 에디터 (다대다 멤버 글 모아보기)
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
-        eid = st.session_state.exchange_id
-        st.header(f"💌 교환일기 작성 ({s_date})")
+        eid = st.session_state.current_exchange_id
+        room_info = get_exchange_room_info(eid)
+        
+        st.header(f"💌 [{room_info['title']}] 교환일기 작성 ({s_date})")
 
         editor_mode_ex = st.radio("교환일기장 스타일 선택:", ["📖 아날로그 종이 노트", "💻 디지털 모던 노트"], horizontal=True, key="ex_mode_radio")
 
         e_diaries = get_exchange_diaries(eid).get(s_date, [])
         my_e_diary = next((d for d in e_diaries if d['username'] == current_user), None)
-        partner_e_diary = next((d for d in e_diaries if d['username'] != current_user), None)
+        other_e_diaries = [d for d in e_diaries if d['username'] != current_user]
 
-        if partner_e_diary:
-            st.subheader(f"💌 상대방({partner_e_diary['nickname']})의 일기")
-            p_vis = "🔒 둘만 보기" if partner_e_diary.get("is_public", 0) == 0 else "🌐 모두에게 공개"
-            st.caption(f"공개 여부: {p_vis}")
-            
-            st.markdown(f"""
-                <div class="diary-note-container" style="margin-bottom: 20px;">
-                    <div style="font-weight: bold; margin-bottom: 8px;">{partner_e_diary['emotion']} {partner_e_diary['nickname']}님의 기록</div>
-                    <div style="white-space: pre-wrap;">{partner_e_diary['content']}</div>
-                </div>
-            """, unsafe_allow_html=True)
+        if other_e_diaries:
+            st.subheader("💌 다른 멤버들의 일기")
+            for od in other_e_diaries:
+                p_vis = "🔒 둘만 보기" if od.get("is_public", 0) == 0 else "🌐 모두에게 공개"
+                st.markdown(f"**{od['nickname']}**님의 기록 ({od['emotion']}) - *{p_vis}*")
+                st.markdown(f"""
+                    <div class="diary-note-container" style="margin-bottom: 20px;">
+                        <div style="white-space: pre-wrap;">{od['content']}</div>
+                    </div>
+                """, unsafe_allow_html=True)
             st.markdown("---")
 
         st.subheader("내 교환일기 쓰기")
         idx = EMOJI_LIST.index(my_e_diary['emotion']) if my_e_diary and my_e_diary['emotion'] in EMOJI_LIST else 0
-        sel_emo = st.selectbox("오늘 상대방에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx)
+        sel_emo = st.selectbox("오늘 멤버들에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
         if editor_mode_ex == "📖 아날로그 종이 노트":
@@ -1673,7 +1824,7 @@ else:
         curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
         ex_public_choice = st.radio(
             "공개범위 선택:",
-            ["🔒 둘만 보기 (비밀 교환일기)", "🌐 모두에게 공개 (공개일기 모아보기 포함)"],
+            ["🔒 교환일기 멤버끼리만 보기", "🌐 모두에게 공개 (공개일기 모아보기 포함)"],
             index=curr_pub_idx,
             horizontal=True
         )
