@@ -909,6 +909,8 @@ if "invite_code" not in st.session_state:
     st.session_state.invite_code = ""
 if "current_exchange_id" not in st.session_state:
     st.session_state.current_exchange_id = ""
+if "viewing_friend" not in st.session_state:
+    st.session_state.viewing_friend = None
 
 current_theme_key = st.session_state.theme if st.session_state.theme in THEME_STYLES else "👁️‍🗨️ 드림코어"
 theme_cfg = THEME_STYLES[current_theme_key]
@@ -1296,7 +1298,7 @@ else:
             else:
                 st.warning("디데이 제목을 입력해 주세요.")
 
-    # 3. 친구기능 & 교환일기 초대 승인
+    # 3. 친구기능 & 교환일기 초대 승인 (친구 닉네임 클릭 시 일기 구경 모드 활성화)
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 👥 친구기능")
     with st.sidebar.expander("👥 친구 관리"):
@@ -1347,7 +1349,7 @@ else:
                         st.rerun()
         
         st.markdown("---")
-        st.markdown("📋 **내 친구 목록**")
+        st.markdown("📋 **내 친구 목록** *(클릭하여 일기 구경)*")
         friends = get_user_friends(current_user)
         if friends:
             for f in friends:
@@ -1361,7 +1363,16 @@ else:
                 f_icon = f_row[1] if (f_row and f_row[1]) else (f['friend_icon'] or '🧸')
                 f_stat = f_row[2] if f_row else f['friend_status']
 
-                st.markdown(f"**{f_icon} {f_nick}**")
+                # 친구 닉네임 버튼 클릭 시 해당 친구의 일기 보기 페이지로 전환
+                if st.button(f"{f_icon} {f_nick}", key=f"btn_view_friend_{f['friend_username']}", use_container_width=True):
+                    st.session_state.viewing_friend = {
+                        "username": f['friend_username'],
+                        "nickname": f_nick,
+                        "icon": f_icon
+                    }
+                    st.session_state.page = "friend_diary_view"
+                    st.rerun()
+
                 if f_stat:
                     st.caption(f"💬 {f_stat}")
                 
@@ -1379,6 +1390,9 @@ else:
 
                 if st.button("🗑️ 친구 삭제", key=f"del_f_{f['id']}"):
                     delete_friend(f['id'])
+                    if st.session_state.viewing_friend and st.session_state.viewing_friend['username'] == f['friend_username']:
+                        st.session_state.viewing_friend = None
+                        st.session_state.page = "secret_calendar"
                     st.rerun()
                 st.markdown("---")
         else:
@@ -1399,19 +1413,22 @@ else:
             else:
                 st.warning("교환일기 제목을 입력해 주세요.")
 
-    # 4. 일기 메뉴
+    # 4. 일기 메뉴 (친구 일기 구경하기 메뉴 제거, 친구 목록 클릭으로 대체)
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📖 일기")
-    menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기", "👥 친구 일기 구경하기"]
+    menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기"]
     nav_choice = st.sidebar.radio("일기 메뉴", menu_options, label_visibility="collapsed")
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
+        st.session_state.viewing_friend = None
         st.session_state.page = "secret_calendar"
         st.rerun()
     elif nav_choice == "📅 일정 관리 달력" and st.session_state.page not in ["schedule_calendar", "schedule_editor"]:
+        st.session_state.viewing_friend = None
         st.session_state.page = "schedule_calendar"
         st.rerun()
     elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor", "exchange_setup"]:
+        st.session_state.viewing_friend = None
         my_rooms = get_user_exchange_rooms(current_user)
         if my_rooms:
             st.session_state.page = "exchange_calendar"
@@ -1419,10 +1436,8 @@ else:
             st.session_state.page = "exchange_setup"
         st.rerun()
     elif nav_choice == "🌐 공개일기" and st.session_state.page not in ["public_calendar", "public_editor"]:
+        st.session_state.viewing_friend = None
         st.session_state.page = "public_calendar"
-        st.rerun()
-    elif nav_choice == "👥 친구 일기 구경하기" and st.session_state.page != "friend_diary_view":
-        st.session_state.page = "friend_diary_view"
         st.rerun()
 
     st.sidebar.markdown("---")
@@ -1430,6 +1445,7 @@ else:
         st.session_state.user = None
         st.session_state.nickname = None
         st.session_state.current_exchange_id = ""
+        st.session_state.viewing_friend = None
         st.session_state.page = "secret_calendar"
         st.rerun()
 
@@ -1686,74 +1702,77 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 4-1: 👥 친구 일기 구경하기 기능
+    # PAGE 4-1: 👥 친구 일기 구경하기 기능 (사이드바 닉네임 클릭 시 진입)
     elif st.session_state.page == "friend_diary_view":
-        st.header("👥 친구 일기 구경하기")
-        friends = get_user_friends(current_user)
+        f_info = st.session_state.viewing_friend
+        if not f_info:
+            st.session_state.page = "secret_calendar"
+            st.rerun()
+
+        f_uname = f_info['username']
+        f_nick = f_info['nickname']
+        f_icon = f_info['icon']
+
+        st.header(f"👥 친구 일기 구경하기")
+        st.markdown(f"### ✨ {f_icon} **{f_nick}** 님의 일기장")
         
-        if friends:
-            friend_options = {f"{f['friend_icon']} {f['friend_nickname']} ({f['friend_username']})": f for f in friends}
-            selected_friend_label = st.selectbox("구경할 친구를 선택해 주세요:", list(friend_options.keys()))
-            selected_friend = friend_options[selected_friend_label]
-            f_uname = selected_friend['friend_username']
-            f_nick = selected_friend['friend_nickname']
+        tab_f1, tab_f2 = st.tabs(["🌐 공개 일기", "💌 함께 참여중인 교환일기"])
+        
+        with tab_f1:
+            all_pubs = get_all_public_diaries(current_user)
+            friend_pubs = [p for p in all_pubs if p['username'] == f_uname]
             
-            st.markdown(f"### ✨ {selected_friend['friend_icon']} **{f_nick}** 님의 일기장")
+            if friend_pubs:
+                for item in friend_pubs:
+                    increment_public_views(item['username'], item['date'], item['type'], current_user)
+                    with st.container():
+                        p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
+                        header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
+                        st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views']}</small>", unsafe_allow_html=True)
+                        if item['content']:
+                            st.markdown(f"""
+                                <div class="diary-note-container" style="margin-bottom: 12px;">
+                                    <div style="white-space: pre-wrap;">{item['content']}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        if item['drawing']:
+                            st.image(item['drawing'], caption=f"{f_nick}님의 그림일기 🎨", use_column_width=True)
+                        st.markdown("---")
+            else:
+                st.info(f"'{f_nick}'님이 작성한 공개 일기가 없습니다.")
+        
+        with tab_f2:
+            my_rooms = get_user_exchange_rooms(current_user)
+            friend_rooms = get_user_exchange_rooms(f_uname)
+            common_rooms = [r for r in my_rooms if r['exchange_id'] in [fr['exchange_id'] for fr in friend_rooms]]
             
-            tab_f1, tab_f2 = st.tabs(["🌐 공개 일기", "💌 함께 참여중인 교환일기"])
-            
-            with tab_f1:
-                all_pubs = get_all_public_diaries(current_user)
-                friend_pubs = [p for p in all_pubs if p['username'] == f_uname]
-                
-                if friend_pubs:
-                    for item in friend_pubs:
-                        increment_public_views(item['username'], item['date'], item['type'], current_user)
-                        with st.container():
-                            p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
-                            header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
-                            st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views']}</small>", unsafe_allow_html=True)
-                            if item['content']:
-                                st.markdown(f"""
-                                    <div class="diary-note-container" style="margin-bottom: 12px;">
-                                        <div style="white-space: pre-wrap;">{item['content']}</div>
-                                    </div>
-                                """, unsafe_allow_html=True)
-                            if item['drawing']:
-                                st.image(item['drawing'], caption=f"{f_nick}님의 그림일기 🎨", use_column_width=True)
+            if common_rooms:
+                for cr in common_rooms:
+                    st.subheader(f"📖 교환일기 방: {cr['title']}")
+                    ex_diaries = get_exchange_diaries(cr['exchange_id'])
+                    if ex_diaries:
+                        for d_str, d_list in sorted(ex_diaries.items(), reverse=True):
+                            st.markdown(f"📅 **{d_str}**")
+                            for ed in d_list:
+                                st.markdown(f"**{ed['nickname']}** ({ed['emotion']}):")
+                                if ed['content']:
+                                    st.markdown(f"""
+                                        <div class="diary-note-container" style="margin-bottom: 12px;">
+                                            <div style="white-space: pre-wrap;">{ed['content']}</div>
+                                        </div>
+                                    """, unsafe_allow_html=True)
+                                if ed['drawing']:
+                                    st.image(ed['drawing'], caption=f"{ed['nickname']}님의 그림 🎨", use_column_width=True)
                             st.markdown("---")
-                else:
-                    st.info(f"'{f_nick}'님이 작성한 공개 일기가 없습니다.")
-            
-            with tab_f2:
-                my_rooms = get_user_exchange_rooms(current_user)
-                friend_rooms = get_user_exchange_rooms(f_uname)
-                common_rooms = [r for r in my_rooms if r['exchange_id'] in [fr['exchange_id'] for fr in friend_rooms]]
-                
-                if common_rooms:
-                    for cr in common_rooms:
-                        st.subheader(f"📖 교환일기 방: {cr['title']}")
-                        ex_diaries = get_exchange_diaries(cr['exchange_id'])
-                        if ex_diaries:
-                            for d_str, d_list in sorted(ex_diaries.items(), reverse=True):
-                                st.markdown(f"📅 **{d_str}**")
-                                for ed in d_list:
-                                    st.markdown(f"**{ed['nickname']}** ({ed['emotion']}):")
-                                    if ed['content']:
-                                        st.markdown(f"""
-                                            <div class="diary-note-container" style="margin-bottom: 12px;">
-                                                <div style="white-space: pre-wrap;">{ed['content']}</div>
-                                            </div>
-                                        """, unsafe_allow_html=True)
-                                    if ed['drawing']:
-                                        st.image(ed['drawing'], caption=f"{ed['nickname']}님의 그림 🎨", use_column_width=True)
-                                st.markdown("---")
-                        else:
-                            st.info("작성된 교환일기가 없습니다.")
-                else:
-                    st.info(f"'{f_nick}'님과 함께 참여 중인 교환일기 방이 없습니다.")
-        else:
-            st.info("등록된 친구가 없습니다. 사이드바의 '친구 관리'에서 친구를 먼저 추가해 주세요!")
+                    else:
+                        st.info("작성된 교환일기가 없습니다.")
+            else:
+                st.info(f"'{f_nick}'님과 함께 참여 중인 교환일기 방이 없습니다.")
+
+        if st.button("🗓️ 내 비밀일기로 돌아가기", use_container_width=True):
+            st.session_state.viewing_friend = None
+            st.session_state.page = "secret_calendar"
+            st.rerun()
 
     # PAGE 5: 비밀/공개 일기 에디터 (오늘의 질문 및 그림판 포함)
     elif st.session_state.page in ["secret_editor", "public_editor"]:
@@ -1788,16 +1807,11 @@ else:
             txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=220, label_visibility="collapsed")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # ---------------------------------------------------------
-        # 🎨 그림일기 캔버스 추가 기능
-        # ---------------------------------------------------------
         st.markdown("---")
         st.markdown("### 🎨 그림 추가하기")
         
         drawing_data = ex_data.get("drawing", "")
-        has_existing_drawing = bool(drawing_data)
 
-        # 컴포넌트 간 통신을 위한 캔버스 UI HTML/JS
         canvas_html = f"""
         <!DOCTYPE html>
         <html>
@@ -1850,35 +1864,24 @@ else:
             <div class="canvas-box">
                 <canvas id="paintCanvas" width="500" height="320"></canvas>
             </div>
-            <input type="hidden" id="drawingResult" value="">
 
             <script>
                 const canvas = document.getElementById('paintCanvas');
                 const ctx = canvas.getContext('2d');
                 let painting = false;
 
-                // 기존 그림 불러오기
                 const savedImgData = "{drawing_data}";
                 if (savedImgData) {{
                     const img = new Image();
-                    img.onload = function() {{
-                        ctx.drawImage(img, 0, 0);
-                    }};
+                    img.onload = function() {{ ctx.drawImage(img, 0, 0); }};
                     img.src = savedImgData;
                 }} else {{
                     ctx.fillStyle = "{theme_cfg['paper_bg']}";
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
                 }}
 
-                function startPosition(e) {{
-                    painting = true;
-                    draw(e);
-                }}
-                function endPosition() {{
-                    painting = false;
-                    ctx.beginPath();
-                    updateParent();
-                }}
+                function startPosition(e) {{ painting = true; draw(e); }}
+                function endPosition() {{ painting = false; ctx.beginPath(); updateParent(); }}
                 function draw(e) {{
                     if (!painting) return;
                     ctx.lineWidth = document.getElementById('brushSize').value;
@@ -1921,15 +1924,9 @@ else:
         </html>
         """
 
-        # Streamlit 숨겨진 입력창으로 그림 데이터 동기화
         drawing_input_val = st.text_input("hidden_drawing_input", value=drawing_data, label_visibility="collapsed", key=f"drawing_hidden_{s_date}")
-        
-        # 컴포넌트 렌더링
         components.html(canvas_html, height=390)
 
-        # ---------------------------------------------------------
-        # 💡 오늘의 질문 코너 (일기장 맨 밑)
-        # ---------------------------------------------------------
         st.markdown("---")
         daily_q = get_daily_question(s_date)
         saved_q_answer = get_daily_answer(current_user, s_date)
@@ -1989,7 +1986,7 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 6: 교환일기 에디터 (그림 추가 포함)
+    # PAGE 6: 교환일기 에디터
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
         eid = st.session_state.current_exchange_id
