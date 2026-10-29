@@ -94,7 +94,6 @@ def generate_invite_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 def get_daily_question(date_str):
-    # 날짜 문자열을 숫자로 변환하여 매일 고정된 질문이 나오도록 함
     try:
         dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
         day_num = dt.toordinal()
@@ -138,7 +137,6 @@ def init_db():
         )
     ''')
 
-    # 오늘의 질문 답변 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_answers (
             username TEXT,
@@ -1819,7 +1817,6 @@ else:
                     
                     save_diary(current_user, s_date, sel_emoji, txt.strip(), final_is_pub, final_allow_str)
                     
-                    # 오늘의 질문 답변 저장
                     if daily_ans_input.strip():
                         save_daily_answer(current_user, s_date, daily_q, daily_ans_input.strip())
                     
