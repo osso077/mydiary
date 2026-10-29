@@ -172,6 +172,18 @@ def init_db():
         )
     ''')
 
+    # 친구 요청 테이블 추가
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS friend_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_username TEXT,
+            receiver_username TEXT,
+            status TEXT DEFAULT 'pending',
+            FOREIGN KEY (sender_username) REFERENCES users(username),
+            FOREIGN KEY (receiver_username) REFERENCES users(username)
+        )
+    ''')
+
     cols = [
         ("users", "nickname TEXT DEFAULT ''"),
         ("users", "birthdate TEXT DEFAULT ''"),
@@ -292,45 +304,99 @@ def connect_exchange_by_code(my_username, partner_code, ex_type, start_date_str)
     push_db_to_github("Exchange connected")
     return True, eid
 
-def add_friend_by_code(my_username, my_nickname, my_icon, my_status, friend_code):
+def send_friend_request(my_username, friend_code):
     conn = get_connection()
     c = conn.cursor()
     cleaned_code = friend_code.strip().upper()
-    c.execute("SELECT username, nickname, profile_icon, status_message FROM users WHERE UPPER(invite_code) = ?", (cleaned_code,))
+    c.execute("SELECT username, nickname FROM users WHERE UPPER(invite_code) = ?", (cleaned_code,))
     friend = c.fetchone()
     
     if not friend:
         conn.close()
         return False, "존재하지 않는 초대코드입니다."
     
-    f_username, f_nickname, f_icon, f_status = friend[0], friend[1], (friend[2] or '🧸'), (friend[3] or '')
+    f_username, f_nickname = friend[0], friend[1]
     if f_username == my_username:
         conn.close()
         return False, "자신의 초대코드는 입력할 수 없습니다."
 
+    # 이미 친구인지 확인
     c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (my_username, f_username))
     if c.fetchone():
         conn.close()
         return False, "이미 친구로 등록된 사용자입니다."
 
+    # 이미 보낸 요청인지 확인
+    c.execute("SELECT id FROM friend_requests WHERE sender_username = ? AND receiver_username = ? AND status = 'pending'", (my_username, f_username))
+    if c.fetchone():
+        conn.close()
+        return False, "이미 친구 요청을 보냈습니다."
+
+    c.execute("INSERT INTO friend_requests (sender_username, receiver_username, status) VALUES (?, ?, 'pending')", (my_username, f_username))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Friend request sent")
+    return True, f"'{f_nickname}'님에게 친구 요청을 보냈습니다!"
+
+def get_pending_friend_requests(username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        fr.id, u.username, u.nickname, u.profile_icon, u.status_message
+        FROM friend_requests fr
+        JOIN users u ON fr.sender_username = u.username
+        WHERE fr.receiver_username = ? AND fr.status = 'pending'
+    '''.replace("fr.id", "fr.id")) # Syntax guard
+    # Fixed query below:
+    c.execute('''
+        SELECT fr.id, u.username, u.nickname, u.profile_icon, u.status_message 
+        FROM friend_requests fr 
+        JOIN users u ON fr.sender_username = u.username 
+        WHERE fr.receiver_username = ? AND fr.status = 'pending'
+    ''', (username,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r[0], "sender_username": r[1], "sender_nickname": r[2], "sender_icon": r[3] or '🧸', "sender_status": r[4] or ''} for r in rows]
+
+def accept_friend_request(request_id, my_username):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT sender_username FROM friend_requests WHERE id = ? AND receiver_username = ?", (request_id, my_username))
+    req = c.fetchone()
+    if not req:
+        conn.close()
+        return
+    
+    sender_username = req[0]
+    c.execute("UPDATE friend_requests SET status = 'accepted' WHERE id = ?", (request_id,))
+
+    # 상대방 정보 조회
+    c.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (sender_username,))
+    s_info = c.fetchone()
+    s_nick, s_icon, s_status = s_info[0], s_info[1] or '🧸', s_info[2] or ''
+
+    # 내 정보 조회
     c.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (my_username,))
     my_info = c.fetchone()
-    my_cur_nick = my_info[0] if my_info else my_nickname
-    my_cur_icon = my_info[1] if my_info else my_icon
-    my_cur_status = my_info[2] if my_info else my_status
+    my_nick, my_icon, my_status = my_info[0], my_info[1] or '🧸', my_info[2] or ''
 
+    # 상호 친구 관계 등록
     c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
-              (my_username, f_username, f_nickname, f_icon, f_status))
-    
-    c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (f_username, my_username))
-    if not c.fetchone():
-        c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
-                  (f_username, my_username, my_cur_nick, my_cur_icon, my_cur_status))
+              (my_username, sender_username, s_nick, s_icon, s_status))
+    c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
+              (sender_username, my_username, my_nick, my_icon, my_status))
 
     conn.commit()
     conn.close()
-    push_db_to_github("Mutual friend added")
-    return True, f"'{f_nickname}'님과 상호 친구가 되었습니다!"
+    push_db_to_github("Friend request accepted")
+
+def reject_friend_request(request_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM friend_requests WHERE id = ?", (request_id,))
+    conn.commit()
+    conn.close()
+    push_db_to_github("Friend request rejected")
 
 def get_user_friends(username):
     conn = get_connection()
@@ -1089,18 +1155,40 @@ else:
     st.sidebar.markdown("### 👥 친구기능")
     with st.sidebar.expander("👥 친구 관리"):
         friend_code_input = st.text_input("친구 초대코드 입력")
-        if st.button("친구 추가하기", use_container_width=True):
+        if st.button("친구 요청 보내기", use_container_width=True):
             if friend_code_input.strip():
-                ok, msg = add_friend_by_code(current_user, current_nickname, current_profile_icon, current_status_message, friend_code_input.strip().upper())
+                ok, msg = send_friend_request(current_user, friend_code_input.strip().upper())
                 if ok:
                     st.success(msg)
-                    st.rerun()
                 else:
                     st.error(msg)
             else:
                 st.warning("초대코드를 입력해 주세요.")
+
+        # 받은 친구 요청 확인
+        pending_reqs = get_pending_friend_requests(current_user)
+        if pending_reqs:
+            st.markdown("---")
+            st.markdown("📬 **받은 친구 요청**")
+            for req in pending_reqs:
+                st.write(f"{req['sender_icon']} **{req['sender_nickname']}**")
+                if req['sender_status']:
+                    st.caption(f"💬 {req['sender_status']}")
+                
+                rc1, rc2 = st.columns(2)
+                with rc1:
+                    if st.button("✔️ 승인", key=f"accept_req_{req['id']}"):
+                        accept_friend_request(req['id'], current_user)
+                        st.success(f"'{req['sender_nickname']}'님의 요청을 승인했습니다!")
+                        st.rerun()
+                with rc2:
+                    if st.button("❌ 거절", key=f"reject_req_{req['id']}"):
+                        reject_friend_request(req['id'])
+                        st.info("요청을 거절했습니다.")
+                        st.rerun()
         
         st.markdown("---")
+        st.markdown("📋 **내 친구 목록**")
         friends = get_user_friends(current_user)
         if friends:
             for f in friends:
