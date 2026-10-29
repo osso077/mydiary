@@ -111,7 +111,6 @@ def init_db():
         )
     ''')
 
-    # 교환일기 방 테이블 (다대다 지원)
     c.execute('''
         CREATE TABLE IF NOT EXISTS exchange_rooms (
             exchange_id TEXT PRIMARY KEY,
@@ -122,7 +121,6 @@ def init_db():
         )
     ''')
 
-    # 교환일기 방 멤버 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS exchange_members (
             exchange_id TEXT,
@@ -203,7 +201,6 @@ def init_db():
         )
     ''')
 
-    # 교환일기 초대/신청 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS exchange_invites (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -479,13 +476,6 @@ def send_exchange_invite(exchange_id, sender_username, receiver_username):
 def get_pending_exchange_invites(username):
     conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        ei.id, ei.exchange_id, r.title, u.nickname, u.profile_icon 
-        FROM exchange_invites ei
-        JOIN exchange_rooms r ON ei.exchange_id = r.exchange_id
-        JOIN users u ON ei.sender_username = u.username
-        WHERE ei.receiver_username = ? AND ei.status = 'pending'
-    '''.replace("ei.id", "ei.id")) # Syntax guard
     c.execute('''
         SELECT ei.id, ei.exchange_id, r.title, u.nickname, u.profile_icon 
         FROM exchange_invites ei
@@ -1065,7 +1055,6 @@ if st.session_state.user is None:
                     st.session_state.sub_color = s_color
                     st.session_state.invite_code = inv_code
                     
-                    # 참여중인 첫번째 교환일기 방 자동 선택
                     my_rooms = get_user_exchange_rooms(username_input)
                     if my_rooms:
                         st.session_state.current_exchange_id = my_rooms[0]["exchange_id"]
@@ -1129,7 +1118,7 @@ else:
     # =========================================================
     st.sidebar.markdown("---")
     
-    # 1. 내 메뉴 (정보설정 & 테마관리)
+    # 1. 내 메뉴
     st.sidebar.markdown("### 👤 내 메뉴")
     with st.sidebar.expander("⚙️ 정보설정 (프로필 개성꾸미기)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
@@ -1260,7 +1249,6 @@ else:
             else:
                 st.warning("초대코드를 입력해 주세요.")
 
-        # 받은 친구 요청
         pending_reqs = get_pending_friend_requests(current_user)
         if pending_reqs:
             st.markdown("---")
@@ -1278,7 +1266,6 @@ else:
                         reject_friend_request(req['id'])
                         st.rerun()
 
-        # 받은 교환일기 초대
         pending_ex_invites = get_pending_exchange_invites(current_user)
         if pending_ex_invites:
             st.markdown("---")
@@ -1316,7 +1303,6 @@ else:
                 if f_stat:
                     st.caption(f"💬 {f_stat}")
                 
-                # 친구에게 교환일기 초대 보내기 버튼
                 my_rooms = get_user_exchange_rooms(current_user)
                 if my_rooms:
                     room_options = {r['title']: r['exchange_id'] for r in my_rooms}
@@ -1775,7 +1761,7 @@ else:
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
                 st.rerun()
 
-    # PAGE 6: 교환일기 에디터 (다대다 멤버 글 모아보기)
+    # PAGE 6: 교환일기 에디터
     elif st.session_state.page == "exchange_editor":
         s_date = st.session_state.selected_date
         eid = st.session_state.current_exchange_id
