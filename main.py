@@ -69,11 +69,38 @@ SCHEDULE_CATEGORIES = {
     "📌 기타/개인": "#8B5CF6"   # 보라
 }
 
+DAILY_QUESTIONS = [
+    "오늘 가장 나를 미소 짓게 만든 작은 순간은 무엇인가요?",
+    "최근에 새로 알게 되었거나 빠져든 취향이 있나요?",
+    "오늘 하루 중 가장 솔직했던 순간은 언제인가요?",
+    "나에게 해주고 싶은 따뜻한 위로의 한마디는?",
+    "오늘 먹은 음식 중 가장 기억에 남는 것은 무엇인가요?",
+    "다시 돌아가고 싶은 과거의 순간이 있다면 언제인가요?",
+    "내 방에서 가장 아끼는 물건과 그 이유는?",
+    "요즘 가장 자주 듣는 음악이나 좋아하는 플레이리스트는?",
+    "오늘 하루를 한 줄 요약한다면 어떤 제목을 붙이고 싶나요?",
+    "최근에 누군가에게 고마움을 느꼈던 적이 있나요?",
+    "내일 나에게 기대되는 일이나 소소한 바람은 무엇인가요?",
+    "어릴 적 꿈꾸던 나의 모습과 지금의 나는 얼마나 닮아 있나요?",
+    "오늘 하늘을 보았나요? 오늘의 날씨와 나의 기분은 어땠나요?",
+    "스트레스가 쌓일 때 나만의 해소법은 무엇인가요?",
+    "올해 꼭 이루고 싶은 소소한 목표 한 가지를 적어보세요."
+]
+
 def get_connection():
     return sqlite3.connect(DB_FILE, check_same_thread=False)
 
 def generate_invite_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+def get_daily_question(date_str):
+    # 날짜 문자열을 숫자로 변환하여 매일 고정된 질문이 나오도록 함
+    try:
+        dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        day_num = dt.toordinal()
+        return DAILY_QUESTIONS[day_num % len(DAILY_QUESTIONS)]
+    except Exception:
+        return DAILY_QUESTIONS[0]
 
 def init_db():
     conn = get_connection()
@@ -108,6 +135,17 @@ def init_db():
             views INTEGER DEFAULT 0,
             PRIMARY KEY (username, date),
             FOREIGN KEY (username) REFERENCES users(username)
+        )
+    ''')
+
+    # 오늘의 질문 답변 테이블
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS daily_answers (
+            username TEXT,
+            date TEXT,
+            question TEXT,
+            answer TEXT,
+            PRIMARY KEY (username, date)
         )
     ''')
 
@@ -611,9 +649,31 @@ def delete_diary(username, date_str):
     c = conn.cursor()
     c.execute("DELETE FROM diaries WHERE username = ? AND date = ?", (username, date_str))
     c.execute("DELETE FROM comments WHERE diary_username = ? AND diary_date = ?", (username, date_str))
+    c.execute("DELETE FROM daily_answers WHERE username = ? AND date = ?", (username, date_str))
     conn.commit()
     conn.close()
     push_db_to_github(f"Delete diary entry for {date_str}")
+
+def get_daily_answer(username, date_str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT answer FROM daily_answers WHERE username = ? AND date = ?", (username, date_str))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else ""
+
+def save_daily_answer(username, date_str, question, answer):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO daily_answers (username, date, question, answer)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(username, date) DO UPDATE SET
+            question=excluded.question, answer=excluded.answer
+    ''', (username, date_str, question, answer))
+    conn.commit()
+    conn.close()
+    push_db_to_github(f"Update daily answer for {date_str}")
 
 def get_exchange_diaries(exchange_id):
     conn = get_connection()
@@ -1683,7 +1743,7 @@ else:
         else:
             st.info("등록된 친구가 없습니다. 사이드바의 '친구 관리'에서 친구를 먼저 추가해 주세요!")
 
-    # PAGE 5: 비밀/공개 일기 에디터
+    # PAGE 5: 비밀/공개 일기 에디터 (오늘의 질문 포함)
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
@@ -1716,6 +1776,17 @@ else:
             txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=280, label_visibility="collapsed")
             st.markdown("</div>", unsafe_allow_html=True)
 
+        # ---------------------------------------------------------
+        # 💡 오늘의 질문 코너 (일기장 맨 밑)
+        # ---------------------------------------------------------
+        st.markdown("---")
+        daily_q = get_daily_question(s_date)
+        saved_q_answer = get_daily_answer(current_user, s_date)
+
+        st.markdown(f"### ✨ 오늘의 질문")
+        st.info(f"💡 **{daily_q}**")
+        daily_ans_input = st.text_area("질문에 대한 나의 답변을 적어보세요:", value=saved_q_answer, height=100, placeholder="소소한 생각을 남겨보세요 🪄")
+
         friends = get_user_friends(current_user)
         existing_allow = ex_data.get("allow_friends", "") if "allow_friends" in ex_data else ""
         existing_allow_list = [x.strip() for x in existing_allow.split(",") if x.strip()]
@@ -1747,7 +1818,12 @@ else:
                     final_allow_str = ",".join(selected_allow_friends) if pub_mode == "👥 선택한 친구에게만 공개" else ""
                     
                     save_diary(current_user, s_date, sel_emoji, txt.strip(), final_is_pub, final_allow_str)
-                    st.success("일기가 저장되었습니다!")
+                    
+                    # 오늘의 질문 답변 저장
+                    if daily_ans_input.strip():
+                        save_daily_answer(current_user, s_date, daily_q, daily_ans_input.strip())
+                    
+                    st.success("일기와 오늘의 질문 답변이 저장되었습니다!")
                     st.session_state.page = "public_calendar" if final_is_pub or final_allow_str else "secret_calendar"
                     st.rerun()
         with col2:
