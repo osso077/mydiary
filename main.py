@@ -919,7 +919,7 @@ sub_color = st.session_state.sub_color if st.session_state.sub_color else theme_
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입 (아날로그 줄노트 입력창 강제 적용)
+# 동적 CSS 주입
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -939,37 +939,6 @@ if st.session_state.user is not None:
             letter-spacing: 1px;
         }}
         
-        /* 아날로그 노트 테두리 박스 및 줄무늬 패턴 */
-        .diary-note-container {{
-            background-color: {theme_cfg['paper_bg']} !important;
-            color: {theme_cfg['paper_text']} !important;
-            border: 1px solid {theme_cfg['card_border']} !important;
-            border-radius: 12px !important;
-            padding: 24px 24px 24px 36px !important;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.08), inset 0 0 15px rgba(0, 0, 0, 0.03) !important;
-            position: relative;
-            background-image: 
-                linear-gradient(90deg, transparent 32px, #FF808033 32px, #FF808033 34px, transparent 34px),
-                linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
-            background-size: 100% 32px !important;
-        }}
-
-        /* 핵심: Streamlit 텍스트 입력창 내부까지 줄노트 배경 강제 적용 */
-        .diary-note-container textarea, .diary-note-container .stTextArea textarea, div[data-baseweb="textarea"] textarea {{
-            background-color: transparent !important;
-            background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
-            background-size: 100% 32px !important;
-            border: none !important;
-            border-radius: 0px !important;
-            color: {theme_cfg['paper_text']} !important;
-            font-family: {theme_cfg['font_family']} !important;
-            font-size: 1.15rem !important;
-            line-height: 32px !important;
-            padding-top: 4px !important;
-            box-shadow: none !important;
-            resize: vertical !important;
-        }}
-
         .diary-digital-container {{
             background-color: {theme_cfg['card_bg']} !important;
             color: {theme_cfg['text']} !important;
@@ -1675,9 +1644,7 @@ else:
                         
                         if item['content']:
                             st.markdown(f"""
-                                <div class="diary-note-container" style="margin-bottom: 12px;">
-                                    <div style="white-space: pre-wrap;">{item['content']}</div>
-                                </div>
+                                <div style="background-color: {theme_cfg['paper_bg']}; color: {theme_cfg['paper_text']}; border: 1px solid {theme_cfg['card_border']}; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{item['content']}</div>
                             """, unsafe_allow_html=True)
                         
                         if item['drawing']:
@@ -1733,9 +1700,7 @@ else:
                         st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views']}</small>", unsafe_allow_html=True)
                         if item['content']:
                             st.markdown(f"""
-                                <div class="diary-note-container" style="margin-bottom: 12px;">
-                                    <div style="white-space: pre-wrap;">{item['content']}</div>
-                                </div>
+                                <div style="background-color: {theme_cfg['paper_bg']}; color: {theme_cfg['paper_text']}; border: 1px solid {theme_cfg['card_border']}; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{item['content']}</div>
                             """, unsafe_allow_html=True)
                         if item['drawing']:
                             st.image(item['drawing'], caption=f"{f_nick}님의 그림일기 🎨", use_column_width=True)
@@ -1759,9 +1724,7 @@ else:
                                 st.markdown(f"**{ed['nickname']}** ({ed['emotion']}):")
                                 if ed['content']:
                                     st.markdown(f"""
-                                        <div class="diary-note-container" style="margin-bottom: 12px;">
-                                            <div style="white-space: pre-wrap;">{ed['content']}</div>
-                                        </div>
+                                        <div style="background-color: {theme_cfg['paper_bg']}; color: {theme_cfg['paper_text']}; border: 1px solid {theme_cfg['card_border']}; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{ed['content']}</div>
                                     """, unsafe_allow_html=True)
                                 if ed['drawing']:
                                     st.image(ed['drawing'], caption=f"{ed['nickname']}님의 그림 🎨", use_column_width=True)
@@ -1794,19 +1757,83 @@ else:
         sel_emo = st.selectbox("이날의 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
+        content_val = ex_data.get("content", "")
+
         if editor_mode == "📖 아날로그 종이 노트":
-            st.markdown(f"""
-                <div class="diary-note-container">
-                    <div style="font-weight: bold; margin-bottom: 8px; opacity: 0.8;">📖 {s_date}의 기록 ({sel_emo})</div>
-            """, unsafe_allow_html=True)
-            txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=220, label_visibility="collapsed")
-            st.markdown("</div>", unsafe_allow_html=True)
+            note_editor_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        background-color: {theme_cfg['bg']};
+                        margin: 0;
+                        padding: 0;
+                        font-family: {theme_cfg['font_family']};
+                    }}
+                    .note-wrapper {{
+                        background-color: {theme_cfg['paper_bg']};
+                        border: 1px solid {theme_cfg['card_border']};
+                        border-radius: 12px;
+                        padding: 24px 24px 24px 36px;
+                        box-shadow: 0 10px 25px rgba(0,0,0,0.08), inset 0 0 15px rgba(0, 0, 0, 0.03);
+                        position: relative;
+                        background-image: 
+                            linear-gradient(90deg, transparent 32px, #FF808033 32px, #FF808033 34px, transparent 34px),
+                            linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px);
+                        background-size: 100% 32px;
+                    }}
+                    .note-title {{
+                        font-weight: bold;
+                        margin-bottom: 12px;
+                        color: {theme_cfg['paper_text']};
+                        opacity: 0.85;
+                        font-size: 1.1rem;
+                    }}
+                    textarea {{
+                        width: 100%;
+                        height: 240px;
+                        background-color: transparent !important;
+                        background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
+                        background-size: 100% 32px !important;
+                        border: none !important;
+                        outline: none !important;
+                        color: {theme_cfg['paper_text']} !important;
+                        font-family: {theme_cfg['font_family']} !important;
+                        font-size: 1.15rem !important;
+                        line-height: 32px !important;
+                        padding-top: 4px !important;
+                        resize: vertical;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="note-wrapper">
+                    <div class="note-title">📖 {s_date}의 아날로그 기록 ({sel_emo})</div>
+                    <textarea id="noteTextarea" placeholder="이곳에 일기를 적어보세요...">{content_val}</textarea>
+                </div>
+                <script>
+                    const textarea = document.getElementById('noteTextarea');
+                    textarea.addEventListener('input', function() {{
+                        const parentInput = window.parent.document.querySelector('input[aria-label="hidden_content_input"]');
+                        if (parentInput) {{
+                            parentInput.value = textarea.value;
+                            parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                    }});
+                </script>
+            </body>
+            </html>
+            """
+            content_input_val = st.text_input("hidden_content_input", value=content_val, label_visibility="collapsed", key=f"content_hidden_{s_date}")
+            components.html(note_editor_html, height=340)
+            txt = content_input_val
         else:
             st.markdown(f"""
                 <div class="diary-digital-container">
                     <div style="font-weight: bold; margin-bottom: 8px;">💻 {s_date}의 디지털 기록 ({sel_emo})</div>
             """, unsafe_allow_html=True)
-            txt = st.text_area("일기 내용:", value=ex_data.get("content", ""), height=220, label_visibility="collapsed")
+            txt = st.text_area("일기 내용:", value=content_val, height=220, label_visibility="collapsed")
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("---")
@@ -2009,9 +2036,7 @@ else:
                 st.markdown(f"**{od['nickname']}**님의 기록 ({od['emotion']}) - *{p_vis}*")
                 if od['content']:
                     st.markdown(f"""
-                        <div class="diary-note-container" style="margin-bottom: 12px;">
-                            <div style="white-space: pre-wrap;">{od['content']}</div>
-                        </div>
+                        <div style="background-color: {theme_cfg['paper_bg']}; color: {theme_cfg['paper_text']}; border: 1px solid {theme_cfg['card_border']}; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{od['content']}</div>
                     """, unsafe_allow_html=True)
                 if od['drawing']:
                     st.image(od['drawing'], caption=f"{od['nickname']}님의 그림 🎨", use_column_width=True)
@@ -2022,19 +2047,83 @@ else:
         sel_emo = st.selectbox("오늘 멤버들에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
+        my_ex_content_val = my_e_diary['content'] if my_e_diary else ""
+
         if editor_mode_ex == "📖 아날로그 종이 노트":
-            st.markdown(f"""
-                <div class="diary-note-container">
-                    <div style="font-weight: bold; margin-bottom: 8px; opacity: 0.8;">📖 나의 교환일기 기록 ({sel_emo})</div>
-            """, unsafe_allow_html=True)
-            txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=200, label_visibility="collapsed")
-            st.markdown("</div>", unsafe_allow_html=True)
+            ex_note_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        background-color: {theme_cfg['bg']};
+                        margin: 0;
+                        padding: 0;
+                        font-family: {theme_cfg['font_family']};
+                    }}
+                    .note-wrapper {{
+                        background-color: {theme_cfg['paper_bg']};
+                        border: 1px solid {theme_cfg['card_border']};
+                        border-radius: 12px;
+                        padding: 24px 24px 24px 36px;
+                        box-shadow: 0 10px 25px rgba(0,0,0,0.08), inset 0 0 15px rgba(0, 0, 0, 0.03);
+                        position: relative;
+                        background-image: 
+                            linear-gradient(90deg, transparent 32px, #FF808033 32px, #FF808033 34px, transparent 34px),
+                            linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px);
+                        background-size: 100% 32px;
+                    }}
+                    .note-title {{
+                        font-weight: bold;
+                        margin-bottom: 12px;
+                        color: {theme_cfg['paper_text']};
+                        opacity: 0.85;
+                        font-size: 1.1rem;
+                    }}
+                    textarea {{
+                        width: 100%;
+                        height: 220px;
+                        background-color: transparent !important;
+                        background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
+                        background-size: 100% 32px !important;
+                        border: none !important;
+                        outline: none !important;
+                        color: {theme_cfg['paper_text']} !important;
+                        font-family: {theme_cfg['font_family']} !important;
+                        font-size: 1.15rem !important;
+                        line-height: 32px !important;
+                        padding-top: 4px !important;
+                        resize: vertical;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="note-wrapper">
+                    <div class="note-title">📖 나의 교환일기 기록 ({sel_emo})</div>
+                    <textarea id="exTextarea" placeholder="멤버들에게 전할 이야기를 적어보세요...">{my_ex_content_val}</textarea>
+                </div>
+                <script>
+                    const exTextarea = document.getElementById('exTextarea');
+                    exTextarea.addEventListener('input', function() {{
+                        const parentInput = window.parent.document.querySelector('input[aria-label="hidden_ex_content_input"]');
+                        if (parentInput) {{
+                            parentInput.value = exTextarea.value;
+                            parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                    }});
+                </script>
+            </body>
+            </html>
+            """
+            ex_content_input_val = st.text_input("hidden_ex_content_input", value=my_ex_content_val, label_visibility="collapsed", key=f"ex_content_hidden_{s_date}")
+            components.html(ex_note_html, height=320)
+            txt = ex_content_input_val
         else:
             st.markdown(f"""
                 <div class="diary-digital-container">
                     <div style="font-weight: bold; margin-bottom: 8px;">💻 나의 교환일기 기록 ({sel_emo})</div>
             """, unsafe_allow_html=True)
-            txt = st.text_area("교환일기 내용:", value=my_e_diary['content'] if my_e_diary else "", height=200, label_visibility="collapsed")
+            txt = st.text_area("교환일기 내용:", value=my_ex_content_val, height=200, label_visibility="collapsed")
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("---")
