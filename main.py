@@ -919,7 +919,7 @@ sub_color = st.session_state.sub_color if st.session_state.sub_color else theme_
 app_title = theme_cfg["title"]
 
 # ---------------------------------------------------------
-# 동적 CSS 주입
+# 동적 CSS 주입 (아날로그 줄노트 입력창 강제 적용)
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
@@ -939,7 +939,7 @@ if st.session_state.user is not None:
             letter-spacing: 1px;
         }}
         
-        /* 아날로그 줄노트 스타일 (입력창 배경 및 줄간격 완벽 일치) */
+        /* 아날로그 노트 테두리 박스 및 줄무늬 패턴 */
         .diary-note-container {{
             background-color: {theme_cfg['paper_bg']} !important;
             color: {theme_cfg['paper_text']} !important;
@@ -954,7 +954,8 @@ if st.session_state.user is not None:
             background-size: 100% 32px !important;
         }}
 
-        .diary-note-container textarea, .diary-note-container .stTextArea textarea {{
+        /* 핵심: Streamlit 텍스트 입력창 내부까지 줄노트 배경 강제 적용 */
+        .diary-note-container textarea, .diary-note-container .stTextArea textarea, div[data-baseweb="textarea"] textarea {{
             background-color: transparent !important;
             background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
             background-size: 100% 32px !important;
