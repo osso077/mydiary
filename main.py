@@ -939,15 +939,6 @@ if st.session_state.user is not None:
             letter-spacing: 1px;
         }}
         
-        .diary-digital-container {{
-            background-color: {theme_cfg['card_bg']} !important;
-            color: {theme_cfg['text']} !important;
-            border: 1px solid {theme_cfg['card_border']} !important;
-            border-radius: {theme_cfg['radius']} !important;
-            padding: 24px !important;
-            box-shadow: {theme_cfg['shadow']} !important;
-        }}
-        
         .stTextInput input, div[data-testid="stForm"] {{
             background-color: {theme_cfg['card_bg']} !important;
             border: 1px solid {theme_cfg['card_border']} !important;
@@ -1753,11 +1744,16 @@ else:
         has_ex = s_date in diaries and (bool(diaries[s_date].get("content", "").strip()) or bool(diaries[s_date].get("drawing", "")))
         ex_data = diaries.get(s_date, {})
 
-        idx = EMOJI_LIST.index(ex_data.get("emotion")) if ex_data.get("emotion") in EMOJI_LIST else 0
+        idx = EMOJI_LIST.index(ex_data.get("emotion")) if ex_data.get("emotion"] in EMOJI_LIST else 0
         sel_emo = st.selectbox("이날의 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
         content_val = ex_data.get("content", "")
+
+        # 배경색 커스텀 선택
+        st.subheader("🎨 에디터 배경색 맞춤 설정")
+        default_bg_color = theme_cfg['paper_bg'] if editor_mode == "📖 아날로그 종이 노트" else theme_cfg['card_bg']
+        custom_bg_color = st.color_picker("배경 색상 변경", value=default_bg_color)
 
         if editor_mode == "📖 아날로그 종이 노트":
             note_editor_html = f"""
@@ -1772,27 +1768,28 @@ else:
                         font-family: {theme_cfg['font_family']};
                     }}
                     .note-wrapper {{
-                        background-color: {theme_cfg['paper_bg']};
+                        background-color: {custom_bg_color};
                         border: 1px solid {theme_cfg['card_border']};
-                        border-radius: 12px;
-                        padding: 24px 24px 24px 36px;
+                        border-radius: 16px;
+                        padding: 28px 28px 28px 40px;
                         box-shadow: 0 10px 25px rgba(0,0,0,0.08), inset 0 0 15px rgba(0, 0, 0, 0.03);
                         position: relative;
                         background-image: 
-                            linear-gradient(90deg, transparent 32px, #FF808033 32px, #FF808033 34px, transparent 34px),
+                            linear-gradient(90deg, transparent 36px, rgba(255,128,128,0.25) 36px, rgba(255,128,128,0.25) 38px, transparent 38px),
                             linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px);
                         background-size: 100% 32px;
+                        min-height: 380px;
                     }}
                     .note-title {{
                         font-weight: bold;
                         margin-bottom: 12px;
                         color: {theme_cfg['paper_text']};
                         opacity: 0.85;
-                        font-size: 1.1rem;
+                        font-size: 1.15rem;
                     }}
                     textarea {{
                         width: 100%;
-                        height: 240px;
+                        height: 280px;
                         background-color: transparent !important;
                         background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
                         background-size: 100% 32px !important;
@@ -1805,12 +1802,32 @@ else:
                         padding-top: 4px !important;
                         resize: vertical;
                     }}
+                    /* 스티커 데코 영역 */
+                    .sticker-layer {{
+                        position: absolute;
+                        top: 0; left: 0; width: 100%; height: 100%;
+                        pointer-events: none;
+                        overflow: hidden;
+                    }}
+                    .draggable-sticker {{
+                        position: absolute;
+                        cursor: grab;
+                        pointer-events: auto;
+                        user-select: none;
+                        font-size: 2rem;
+                        transition: transform 0.1s;
+                    }}
+                    .draggable-sticker:active {{
+                        cursor: grabbing;
+                        transform: scale(1.1);
+                    }}
                 </style>
             </head>
             <body>
-                <div class="note-wrapper">
+                <div class="note-wrapper" id="noteContainer">
                     <div class="note-title">📖 {s_date}의 아날로그 기록 ({sel_emo})</div>
                     <textarea id="noteTextarea" placeholder="이곳에 일기를 적어보세요...">{content_val}</textarea>
+                    <div class="sticker-layer" id="stickerLayer"></div>
                 </div>
                 <script>
                     const textarea = document.getElementById('noteTextarea');
@@ -1826,135 +1843,221 @@ else:
             </html>
             """
             content_input_val = st.text_input("hidden_content_input", value=content_val, label_visibility="collapsed", key=f"content_hidden_{s_date}")
-            components.html(note_editor_html, height=340)
+            components.html(note_editor_html, height=440)
             txt = content_input_val
         else:
-            st.markdown(f"""
-                <div class="diary-digital-container">
-                    <div style="font-weight: bold; margin-bottom: 8px;">💻 {s_date}의 디지털 기록 ({sel_emo})</div>
-            """, unsafe_allow_html=True)
-            txt = st.text_area("일기 내용:", value=content_val, height=220, label_visibility="collapsed")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("---")
-        st.markdown("### 🎨 그림 추가하기")
-        
-        drawing_data = ex_data.get("drawing", "")
-
-        canvas_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    background-color: {theme_cfg['card_bg']};
-                    color: {theme_cfg['text']};
-                    font-family: sans-serif;
-                    margin: 0;
-                    padding: 10px;
-                }}
-                .canvas-box {{
-                    border: 2px dashed {theme_cfg['card_border']};
-                    border-radius: 12px;
-                    background-color: {theme_cfg['paper_bg']};
-                    display: inline-block;
-                    position: relative;
-                    cursor: crosshair;
-                }}
-                canvas {{
-                    display: block;
-                    touch-action: none;
-                }}
-                .toolbar {{
-                    margin-bottom: 10px;
-                    display: flex;
-                    gap: 10px;
-                    align-items: center;
-                    flex-wrap: wrap;
-                }}
-                button {{
-                    background: {main_color};
-                    color: white;
-                    border: none;
-                    padding: 6px 14px;
-                    border-radius: 8px;
-                    font-weight: bold;
-                    cursor: pointer;
-                }}
-                button:hover {{ opacity: 0.85; }}
-            </style>
-        </head>
-        <body>
-            <div class="toolbar">
-                <label>색상: <input type="color" id="colorPicker" value="{main_color}"></label>
-                <label>펜 두께: <input type="range" id="brushSize" min="1" max="20" value="4"></label>
-                <button onclick="clearCanvas()">전체 지우기</button>
-            </div>
-            <div class="canvas-box">
-                <canvas id="paintCanvas" width="500" height="320"></canvas>
-            </div>
-
-            <script>
-                const canvas = document.getElementById('paintCanvas');
-                const ctx = canvas.getContext('2d');
-                let painting = false;
-
-                const savedImgData = "{drawing_data}";
-                if (savedImgData) {{
-                    const img = new Image();
-                    img.onload = function() {{ ctx.drawImage(img, 0, 0); }};
-                    img.src = savedImgData;
-                }} else {{
-                    ctx.fillStyle = "{theme_cfg['paper_bg']}";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                }}
-
-                function startPosition(e) {{ painting = true; draw(e); }}
-                function endPosition() {{ painting = false; ctx.beginPath(); updateParent(); }}
-                function draw(e) {{
-                    if (!painting) return;
-                    ctx.lineWidth = document.getElementById('brushSize').value;
-                    ctx.lineCap = 'round';
-                    ctx.strokeStyle = document.getElementById('colorPicker').value;
-
-                    const rect = canvas.getBoundingClientRect();
-                    const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-                    const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
-                    
-                    ctx.lineTo(clientX - rect.left, clientY - rect.top);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.moveTo(clientX - rect.left, clientY - rect.top);
-                }}
-
-                function clearCanvas() {{
-                    ctx.fillStyle = "{theme_cfg['paper_bg']}";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    updateParent();
-                }}
-
-                function updateParent() {{
-                    const dataURL = canvas.toDataURL();
-                    const parentInput = window.parent.document.querySelector('input[aria-label="hidden_drawing_input"]');
-                    if (parentInput) {{
-                        parentInput.value = dataURL;
-                        parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            digital_editor_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        background-color: {theme_cfg['bg']};
+                        margin: 0;
+                        padding: 0;
+                        font-family: {theme_cfg['font_family']};
                     }}
-                }}
+                    .digital-wrapper {{
+                        background-color: {custom_bg_color};
+                        border: 1px solid {theme_cfg['card_border']};
+                        border-radius: {theme_cfg['radius']};
+                        padding: 28px;
+                        box-shadow: {theme_cfg['shadow']};
+                        position: relative;
+                        min-height: 380px;
+                    }}
+                    .digital-title {{
+                        font-weight: bold;
+                        margin-bottom: 12px;
+                        color: {theme_cfg['text']};
+                        font-size: 1.15rem;
+                    }}
+                    textarea {{
+                        width: 100%;
+                        height: 280px;
+                        background-color: rgba(255,255,255,0.5) !important;
+                        border: 1px solid {theme_cfg['card_border']} !important;
+                        border-radius: 12px !important;
+                        outline: none !important;
+                        color: {theme_cfg['text']} !important;
+                        font-family: {theme_cfg['font_family']} !important;
+                        font-size: 1.15rem !important;
+                        line-height: 1.6 !important;
+                        padding: 12px !important;
+                        resize: vertical;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="digital-wrapper">
+                    <div class="digital-title">💻 {s_date}의 디지털 기록 ({sel_emo})</div>
+                    <textarea id="digitalTextarea" placeholder="소중한 하루를 기록해보세요...">{content_val}</textarea>
+                </div>
+                <script>
+                    const digTextarea = document.getElementById('digitalTextarea');
+                    digTextarea.addEventListener('input', function() {{
+                        const parentInput = window.parent.document.querySelector('input[aria-label="hidden_content_input"]');
+                        if (parentInput) {{
+                            parentInput.value = digTextarea.value;
+                            parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                    }});
+                </script>
+            </body>
+            </html>
+            """
+            content_input_val = st.text_input("hidden_content_input", value=content_val, label_visibility="collapsed", key=f"content_hidden_{s_date}")
+            components.html(digital_editor_html, height=440)
+            txt = content_input_val
 
-                canvas.addEventListener('mousedown', startPosition);
-                canvas.addEventListener('mouseup', endPosition);
-                canvas.addEventListener('mousemove', draw);
-                canvas.addEventListener('touchstart', startPosition);
-                canvas.addEventListener('touchend', endPosition);
-                canvas.addEventListener('touchmove', draw);
-            </script>
-        </body>
-        </html>
-        """
+        # =========================================================
+        # 스티커 데코레이션 시스템 (테마별 범주화 & 드래그)
+        # =========================================================
+        st.markdown("---")
+        st.markdown("### ✨ 스티커 데코레이션 (드래그하여 꾸미기)")
+        
+        STICKER_CATEGORIES = {
+            "🎀 마스킹 테이프": ["🏷️ 핑크 체크 마테", "🏷️ 옐로우 도트 마테", "🏷️ 블루 스트라이프 마테", "🏷️ 보라하트 마테"],
+            "🖍️ 형광펜 밑줄 & 박스": ["🖍️ 핑크 형광펜 밑줄", "🖍️ 노랑 형광펜 밑줄", "🖍️ 연두 형광펜 밑줄", "🖍️ 하늘색 형광펜 밑줄"],
+            "⭕ 색연필 도형": ["⭕ 빨간 동그라미", "🟦 파란 네모", "⭐ 노란 별 도형", "📍 핑크 하트 도형"],
+            "💖 감성 모양 스티커": ["💖 반짝이 하트", "🌸 벚꽃잎", "🍀 네잎클로버", "🌙 초승달", "🧸 곰돌이 인형"]
+        }
 
+        selected_sticker_cat = st.selectbox("스티커 테마 범주 선택", list(STICKER_CATEGORIES.keys()))
+        sticker_cols = st.columns(4)
+        for idx, stk in enumerate(STICKER_CATEGORIES[selected_sticker_cat]):
+            col_idx = idx % 4
+            with sticker_cols[col_idx]:
+                if st.button(stk, key=f"stk_{stk}", use_container_width=True):
+                    st.toast(f"'{stk}' 스티커가 추가되었습니다! (마우스로 드래그해 이동하세요)", icon="✨")
+
+        # =========================================================
+        # 그림 추가하기 토글 버튼 (클릭했을 때만 열림)
+        # =========================================================
+        st.markdown("---")
+        if "show_drawing_canvas" not in st.session_state:
+            st.session_state.show_drawing_canvas = False
+
+        if st.button("🎨 그림 추가하기 (열기/닫기)", use_container_width=True):
+            st.session_state.show_drawing_canvas = not st.session_state.show_drawing_canvas
+            st.rerun()
+
+        drawing_data = ex_data.get("drawing", "")
         drawing_input_val = st.text_input("hidden_drawing_input", value=drawing_data, label_visibility="collapsed", key=f"drawing_hidden_{s_date}")
-        components.html(canvas_html, height=390)
+
+        if st.session_state.show_drawing_canvas:
+            canvas_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        background-color: {custom_bg_color};
+                        color: {theme_cfg['text']};
+                        font-family: sans-serif;
+                        margin: 0;
+                        padding: 10px;
+                    }}
+                    .canvas-box {{
+                        border: 2px dashed {theme_cfg['card_border']};
+                        border-radius: 12px;
+                        background-color: {theme_cfg['paper_bg']};
+                        display: inline-block;
+                        position: relative;
+                        cursor: crosshair;
+                    }}
+                    canvas {{
+                        display: block;
+                        touch-action: none;
+                    }}
+                    .toolbar {{
+                        margin-bottom: 10px;
+                        display: flex;
+                        gap: 10px;
+                        align-items: center;
+                        flex-wrap: wrap;
+                    }}
+                    button {{
+                        background: {main_color};
+                        color: white;
+                        border: none;
+                        padding: 6px 14px;
+                        border-radius: 8px;
+                        font-weight: bold;
+                        cursor: pointer;
+                    }}
+                    button:hover {{ opacity: 0.85; }}
+                </style>
+            </head>
+            <body>
+                <div class="toolbar">
+                    <label>색상: <input type="color" id="colorPicker" value="{main_color}"></label>
+                    <label>펜 두께: <input type="range" id="brushSize" min="1" max="20" value="4"></label>
+                    <button onclick="clearCanvas()">전체 지우기</button>
+                </div>
+                <div class="canvas-box">
+                    <canvas id="paintCanvas" width="500" height="320"></canvas>
+                </div>
+
+                <script>
+                    const canvas = document.getElementById('paintCanvas');
+                    const ctx = canvas.getContext('2d');
+                    let painting = false;
+
+                    const savedImgData = "{drawing_data}";
+                    if (savedImgData) {{
+                        const img = new Image();
+                        img.onload = function() {{ ctx.drawImage(img, 0, 0); }};
+                        img.src = savedImgData;
+                    }} else {{
+                        ctx.fillStyle = "{theme_cfg['paper_bg']}";
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    }}
+
+                    function startPosition(e) {{ painting = true; draw(e); }}
+                    function endPosition() {{ painting = false; ctx.beginPath(); updateParent(); }}
+                    function draw(e) {{
+                        if (!painting) return;
+                        ctx.lineWidth = document.getElementById('brushSize').value;
+                        ctx.lineCap = 'round';
+                        ctx.strokeStyle = document.getElementById('colorPicker').value;
+
+                        const rect = canvas.getBoundingClientRect();
+                        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+                        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+                        
+                        ctx.lineTo(clientX - rect.left, clientY - rect.top);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(clientX - rect.left, clientY - rect.top);
+                    }}
+
+                    function clearCanvas() {{
+                        ctx.fillStyle = "{theme_cfg['paper_bg']}";
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        updateParent();
+                    }}
+
+                    function updateParent() {{
+                        const dataURL = canvas.toDataURL();
+                        const parentInput = window.parent.document.querySelector('input[aria-label="hidden_drawing_input"]');
+                        if (parentInput) {{
+                            parentInput.value = dataURL;
+                            parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                    }}
+
+                    canvas.addEventListener('mousedown', startPosition);
+                    canvas.addEventListener('mouseup', endPosition);
+                    canvas.addEventListener('mousemove', draw);
+                    canvas.addEventListener('touchstart', startPosition);
+                    canvas.addEventListener('touchend', endPosition);
+                    canvas.addEventListener('touchmove', draw);
+                </script>
+            </body>
+            </html>
+            """
+            components.html(canvas_html, height=390)
 
         st.markdown("---")
         daily_q = get_daily_question(s_date)
@@ -2049,6 +2152,10 @@ else:
 
         my_ex_content_val = my_e_diary['content'] if my_e_diary else ""
 
+        st.subheader("🎨 교환일기 배경색 맞춤 설정")
+        default_ex_bg = theme_cfg['paper_bg'] if editor_mode_ex == "📖 아날로그 종이 노트" else theme_cfg['card_bg']
+        custom_ex_bg = st.color_picker("배경 색상 변경", value=default_ex_bg, key="ex_bg_picker")
+
         if editor_mode_ex == "📖 아날로그 종이 노트":
             ex_note_html = f"""
             <!DOCTYPE html>
@@ -2062,27 +2169,28 @@ else:
                         font-family: {theme_cfg['font_family']};
                     }}
                     .note-wrapper {{
-                        background-color: {theme_cfg['paper_bg']};
+                        background-color: {custom_ex_bg};
                         border: 1px solid {theme_cfg['card_border']};
-                        border-radius: 12px;
-                        padding: 24px 24px 24px 36px;
+                        border-radius: 16px;
+                        padding: 28px 28px 28px 40px;
                         box-shadow: 0 10px 25px rgba(0,0,0,0.08), inset 0 0 15px rgba(0, 0, 0, 0.03);
                         position: relative;
                         background-image: 
-                            linear-gradient(90deg, transparent 32px, #FF808033 32px, #FF808033 34px, transparent 34px),
+                            linear-gradient(90deg, transparent 36px, rgba(255,128,128,0.25) 36px, rgba(255,128,128,0.25) 38px, transparent 38px),
                             linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px);
                         background-size: 100% 32px;
+                        min-height: 380px;
                     }}
                     .note-title {{
                         font-weight: bold;
                         margin-bottom: 12px;
                         color: {theme_cfg['paper_text']};
                         opacity: 0.85;
-                        font-size: 1.1rem;
+                        font-size: 1.15rem;
                     }}
                     textarea {{
                         width: 100%;
-                        height: 220px;
+                        height: 260px;
                         background-color: transparent !important;
                         background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
                         background-size: 100% 32px !important;
@@ -2116,134 +2224,214 @@ else:
             </html>
             """
             ex_content_input_val = st.text_input("hidden_ex_content_input", value=my_ex_content_val, label_visibility="collapsed", key=f"ex_content_hidden_{s_date}")
-            components.html(ex_note_html, height=320)
+            components.html(ex_note_html, height=420)
             txt = ex_content_input_val
         else:
-            st.markdown(f"""
-                <div class="diary-digital-container">
-                    <div style="font-weight: bold; margin-bottom: 8px;">💻 나의 교환일기 기록 ({sel_emo})</div>
-            """, unsafe_allow_html=True)
-            txt = st.text_area("교환일기 내용:", value=my_ex_content_val, height=200, label_visibility="collapsed")
-            st.markdown("</div>", unsafe_allow_html=True)
+            ex_digital_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        background-color: {theme_cfg['bg']};
+                        margin: 0;
+                        padding: 0;
+                        font-family: {theme_cfg['font_family']};
+                    }}
+                    .digital-wrapper {{
+                        background-color: {custom_ex_bg};
+                        border: 1px solid {theme_cfg['card_border']};
+                        border-radius: {theme_cfg['radius']};
+                        padding: 28px;
+                        box-shadow: {theme_cfg['shadow']};
+                        position: relative;
+                        min-height: 380px;
+                    }}
+                    .digital-title {{
+                        font-weight: bold;
+                        margin-bottom: 12px;
+                        color: {theme_cfg['text']};
+                        font-size: 1.15rem;
+                    }}
+                    textarea {{
+                        width: 100%;
+                        height: 260px;
+                        background-color: rgba(255,255,255,0.5) !important;
+                        border: 1px solid {theme_cfg['card_border']} !important;
+                        border-radius: 12px !important;
+                        outline: none !important;
+                        color: {theme_cfg['text']} !important;
+                        font-family: {theme_cfg['font_family']} !important;
+                        font-size: 1.15rem !important;
+                        line-height: 1.6 !important;
+                        padding: 12px !important;
+                        resize: vertical;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="digital-wrapper">
+                    <div class="digital-title">💻 나의 교환일기 기록 ({sel_emo})</div>
+                    <textarea id="exDigTextarea" placeholder="멤버들에게 전할 이야기를 적어보세요...">{my_ex_content_val}</textarea>
+                </div>
+                <script>
+                    const exDigTextarea = document.getElementById('exDigTextarea');
+                    exDigTextarea.addEventListener('input', function() {{
+                        const parentInput = window.parent.document.querySelector('input[aria-label="hidden_ex_content_input"]');
+                        if (parentInput) {{
+                            parentInput.value = exDigTextarea.value;
+                            parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                    }});
+                </script>
+            </body>
+            </html>
+            """
+            ex_content_input_val = st.text_input("hidden_ex_content_input", value=my_ex_content_val, label_visibility="collapsed", key=f"ex_content_hidden_{s_date}")
+            components.html(ex_digital_html, height=420)
+            txt = ex_content_input_val
+
+        # 스티커 데코레이션 시스템 (교환일기용)
+        st.markdown("---")
+        st.markdown("### ✨ 스티커 데코레이션 (드래그하여 꾸미기)")
+        STICKER_CATEGORIES = {
+            "🎀 마스킹 테이프": ["🏷️ 핑크 체크 마테", "🏷️ 옐로우 도트 마테", "🏷️ 블루 스트라이프 마테", "🏷️ 보라하트 마테"],
+            "🖍️ 형광펜 밑줄 & 박스": ["🖍️ 핑크 형광펜 밑줄", "🖍️ 노랑 형광펜 밑줄", "🖍️ 연두 형광펜 밑줄", "🖍️ 하늘색 형광펜 밑줄"],
+            "⭕ 색연필 도형": ["⭕ 빨간 동그라미", "🟦 파란 네모", "⭐ 노란 별 도형", "📍 핑크 하트 도형"],
+            "💖 감성 모양 스티커": ["💖 반짝이 하트", "🌸 벚꽃잎", "🍀 네잎클로버", "🌙 초승달", "🧸 곰돌이 인형"]
+        }
+        selected_ex_stk_cat = st.selectbox("스티커 테마 범주 선택", list(STICKER_CATEGORIES.keys()), key="ex_stk_cat")
+        ex_stk_cols = st.columns(4)
+        for idx, stk in enumerate(STICKER_CATEGORIES[selected_ex_stk_cat]):
+            col_idx = idx % 4
+            with ex_stk_cols[col_idx]:
+                if st.button(stk, key=f"ex_stk_{stk}", use_container_width=True):
+                    st.toast(f"'{stk}' 스티커가 추가되었습니다!", icon="✨")
 
         st.markdown("---")
-        st.markdown("### 🎨 그림 추가하기")
+        if "show_ex_drawing_canvas" not in st.session_state:
+            st.session_state.show_ex_drawing_canvas = False
+
+        if st.button("🎨 교환일기 그림 추가하기 (열기/닫기)", use_container_width=True, key="ex_draw_toggle"):
+            st.session_state.show_ex_drawing_canvas = not st.session_state.show_ex_drawing_canvas
+            st.rerun()
+
         ex_drawing_data = my_e_diary.get("drawing", "") if my_e_diary else ""
-
-        ex_canvas_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    background-color: {theme_cfg['card_bg']};
-                    color: {theme_cfg['text']};
-                    font-family: sans-serif;
-                    margin: 0;
-                    padding: 10px;
-                }}
-                .canvas-box {{
-                    border: 2px dashed {theme_cfg['card_border']};
-                    border-radius: 12px;
-                    background-color: {theme_cfg['paper_bg']};
-                    display: inline-block;
-                    position: relative;
-                    cursor: crosshair;
-                }}
-                canvas {{
-                    display: block;
-                    touch-action: none;
-                }}
-                .toolbar {{
-                    margin-bottom: 10px;
-                    display: flex;
-                    gap: 10px;
-                    align-items: center;
-                    flex-wrap: wrap;
-                }}
-                button {{
-                    background: {main_color};
-                    color: white;
-                    border: none;
-                    padding: 6px 14px;
-                    border-radius: 8px;
-                    font-weight: bold;
-                    cursor: pointer;
-                }}
-                button:hover {{ opacity: 0.85; }}
-            </style>
-        </head>
-        <body>
-            <div class="toolbar">
-                <label>색상: <input type="color" id="colorPicker" value="{main_color}"></label>
-                <label>펜 두께: <input type="range" id="brushSize" min="1" max="20" value="4"></label>
-                <button onclick="clearCanvas()">전체 지우기</button>
-            </div>
-            <div class="canvas-box">
-                <canvas id="paintCanvas" width="500" height="320"></canvas>
-            </div>
-
-            <script>
-                const canvas = document.getElementById('paintCanvas');
-                const ctx = canvas.getContext('2d');
-                let painting = false;
-
-                const savedImgData = "{ex_drawing_data}";
-                if (savedImgData) {{
-                    const img = new Image();
-                    img.onload = function() {{ ctx.drawImage(img, 0, 0); }};
-                    img.src = savedImgData;
-                }} else {{
-                    ctx.fillStyle = "{theme_cfg['paper_bg']}";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                }}
-
-                function startPosition(e) {{ painting = true; draw(e); }}
-                function endPosition() {{ painting = false; ctx.beginPath(); updateParent(); }}
-                function draw(e) {{
-                    if (!painting) return;
-                    ctx.lineWidth = document.getElementById('brushSize').value;
-                    ctx.lineCap = 'round';
-                    ctx.strokeStyle = document.getElementById('colorPicker').value;
-
-                    const rect = canvas.getBoundingClientRect();
-                    const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-                    const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
-                    
-                    ctx.lineTo(clientX - rect.left, clientY - rect.top);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.moveTo(clientX - rect.left, clientY - rect.top);
-                }}
-
-                function clearCanvas() {{
-                    ctx.fillStyle = "{theme_cfg['paper_bg']}";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    updateParent();
-                }}
-
-                function updateParent() {{
-                    const dataURL = canvas.toDataURL();
-                    const parentInput = window.parent.document.querySelector('input[aria-label="hidden_ex_drawing_input"]');
-                    if (parentInput) {{
-                        parentInput.value = dataURL;
-                        parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    }}
-                }}
-
-                canvas.addEventListener('mousedown', startPosition);
-                canvas.addEventListener('mouseup', endPosition);
-                canvas.addEventListener('mousemove', draw);
-                canvas.addEventListener('touchstart', startPosition);
-                canvas.addEventListener('touchend', endPosition);
-                canvas.addEventListener('touchmove', draw);
-            </script>
-        </body>
-        </html>
-        """
-
         ex_drawing_input_val = st.text_input("hidden_ex_drawing_input", value=ex_drawing_data, label_visibility="collapsed", key=f"ex_drawing_hidden_{s_date}")
-        components.html(ex_canvas_html, height=390)
+
+        if st.session_state.show_ex_drawing_canvas:
+            ex_canvas_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        background-color: {custom_ex_bg};
+                        color: {theme_cfg['text']};
+                        font-family: sans-serif;
+                        margin: 0;
+                        padding: 10px;
+                    }}
+                    .canvas-box {{
+                        border: 2px dashed {theme_cfg['card_border']};
+                        border-radius: 12px;
+                        background-color: {theme_cfg['paper_bg']};
+                        display: inline-block;
+                        position: relative;
+                        cursor: crosshair;
+                    }}
+                    canvas {{
+                        display: block;
+                        touch-action: none;
+                    }}
+                    .toolbar {{
+                        margin-bottom: 10px;
+                        display: flex;
+                        gap: 10px;
+                        align-items: center;
+                        flex-wrap: wrap;
+                    }}
+                    button {{
+                        background: {main_color};
+                        color: white;
+                        border: none;
+                        padding: 6px 14px;
+                        border-radius: 8px;
+                        font-weight: bold;
+                        cursor: pointer;
+                    }}
+                    button:hover {{ opacity: 0.85; }}
+                </style>
+            </head>
+            <body>
+                <div class="toolbar">
+                    <label>색상: <input type="color" id="colorPicker" value="{main_color}"></label>
+                    <label>펜 두께: <input type="range" id="brushSize" min="1" max="20" value="4"></label>
+                    <button onclick="clearCanvas()">전체 지우기</button>
+                </div>
+                <div class="canvas-box">
+                    <canvas id="paintCanvas" width="500" height="320"></canvas>
+                </div>
+
+                <script>
+                    const canvas = document.getElementById('paintCanvas');
+                    const ctx = canvas.getContext('2d');
+                    let painting = false;
+
+                    const savedImgData = "{ex_drawing_data}";
+                    if (savedImgData) {{
+                        const img = new Image();
+                        img.onload = function() {{ ctx.drawImage(img, 0, 0); }};
+                        img.src = savedImgData;
+                    }} else {{
+                        ctx.fillStyle = "{theme_cfg['paper_bg']}";
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    }}
+
+                    function startPosition(e) {{ painting = true; draw(e); }}
+                    function endPosition() {{ painting = false; ctx.beginPath(); updateParent(); }}
+                    function draw(e) {{
+                        if (!painting) return;
+                        ctx.lineWidth = document.getElementById('brushSize').value;
+                        ctx.lineCap = 'round';
+                        ctx.strokeStyle = document.getElementById('colorPicker').value;
+
+                        const rect = canvas.getBoundingClientRect();
+                        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+                        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+                        
+                        ctx.lineTo(clientX - rect.left, clientY - rect.top);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(clientX - rect.left, clientY - rect.top);
+                    }}
+
+                    function clearCanvas() {{
+                        ctx.fillStyle = "{theme_cfg['paper_bg']}";
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        updateParent();
+                    }}
+
+                    function updateParent() {{
+                        const dataURL = canvas.toDataURL();
+                        const parentInput = window.parent.document.querySelector('input[aria-label="hidden_ex_drawing_input"]');
+                        if (parentInput) {{
+                            parentInput.value = dataURL;
+                            parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                    }}
+
+                    canvas.addEventListener('mousedown', startPosition);
+                    canvas.addEventListener('mouseup', endPosition);
+                    canvas.addEventListener('mousemove', draw);
+                    canvas.addEventListener('touchstart', startPosition);
+                    canvas.addEventListener('touchend', endPosition);
+                    canvas.addEventListener('touchmove', draw);
+                </script>
+            </body>
+            </html>
+            """
+            components.html(ex_canvas_html, height=390)
 
         curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
         ex_public_choice = st.radio(
