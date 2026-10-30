@@ -1744,7 +1744,7 @@ else:
         has_ex = s_date in diaries and (bool(diaries[s_date].get("content", "").strip()) or bool(diaries[s_date].get("drawing", "")))
         ex_data = diaries.get(s_date, {})
 
-        idx = EMOJI_LIST.index(ex_data.get("emotion")) if ex_data.get("emotion"] in EMOJI_LIST else 0
+        idx = EMOJI_LIST.index(ex_data.get("emotion")) if ex_data.get("emotion") in EMOJI_LIST else 0
         sel_emo = st.selectbox("이날의 감정 선택:", STANDARD_EMOTIONS, index=idx)
         sel_emoji = sel_emo.split()[0]
 
