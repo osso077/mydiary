@@ -973,7 +973,6 @@ if st.session_state.user is not None:
             transform: translateY(-2px) scale(1.02);
         }}
 
-        /* 동그라미 아이콘 전용 버튼 스타일 */
         .circle-icon-btn > button {{
             border-radius: 50% !important;
             width: 50px !important;
@@ -1166,7 +1165,6 @@ else:
     # =========================================================
     st.sidebar.markdown("---")
     
-    # 1. 내 메뉴
     st.sidebar.markdown("### 👤 내 메뉴")
     with st.sidebar.expander("⚙️ 정보설정 (프로필 개성꾸미기)"):
         edit_nick = st.text_input("닉네임", value=current_nickname, key="edit_nick_input")
@@ -1238,7 +1236,6 @@ else:
             st.success("테마가 적용되었습니다!")
             st.rerun()
 
-    # 2. 일정관리
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📅 일정관리")
 
@@ -1283,7 +1280,6 @@ else:
             else:
                 st.warning("디데이 제목을 입력해 주세요.")
 
-    # 3. 친구기능 & 교환일기 초대 승인
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 👥 친구기능")
     with st.sidebar.expander("👥 친구 관리"):
@@ -1372,7 +1368,7 @@ else:
                         else:
                             st.warning(msg_text)
 
-                if st.button("🗑️ 친구 삭제", key=f"del_f_{f['id']}"):
+                if st.button("🗑️ 삭제", key=f"del_f_{f['id']}"):
                     delete_friend(f['id'])
                     if st.session_state.viewing_friend and st.session_state.viewing_friend['username'] == f['friend_username']:
                         st.session_state.viewing_friend = None
@@ -1397,7 +1393,6 @@ else:
             else:
                 st.warning("교환일기 제목을 입력해 주세요.")
 
-    # 4. 일기 메뉴
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📖 일기")
     menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기"]
@@ -1509,7 +1504,6 @@ else:
             st.session_state.page = "schedule_editor"
             st.rerun()
 
-    # PAGE 2-1: 📅 일정 작성/수정/삭제 화면
     elif st.session_state.page == "schedule_editor":
         st.title(app_title)
         s_date = st.session_state.selected_date
@@ -1550,7 +1544,6 @@ else:
                 st.session_state.page = "schedule_calendar"
                 st.rerun()
 
-    # PAGE 3-0: 💌 교환일기 방 없을 때 생성 화면
     elif st.session_state.page == "exchange_setup":
         st.title(app_title)
         st.header("💌 함께 쓰는 다대다 교환일기")
@@ -1570,7 +1563,6 @@ else:
             else:
                 st.warning("방 제목을 입력해 주세요.")
 
-    # PAGE 3-1: 💌 교환일기 달력 (다대다 지원)
     elif st.session_state.page == "exchange_calendar":
         st.title(app_title)
         my_rooms = get_user_exchange_rooms(current_user)
@@ -1619,7 +1611,6 @@ else:
             st.session_state.page = "exchange_editor"
             st.rerun()
 
-    # PAGE 4: 🌐 공개일기 달력 / 모아보기
     elif st.session_state.page == "public_calendar":
         st.title(app_title)
         st.header("🌐 공유하는 공개일기")
@@ -1688,7 +1679,6 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 4-1: 👥 친구 일기 구경하기 기능
     elif st.session_state.page == "friend_diary_view":
         st.title(app_title)
         f_info = st.session_state.viewing_friend
@@ -1758,7 +1748,7 @@ else:
             st.rerun()
 
     # =========================================================
-    # PAGE 5: 스케치 레이아웃 기반 일기 작성 에디터
+    # PAGE 5: 스케치 레이아웃 기반 일기 작성 에디터 (스티커 오류 수정됨)
     # =========================================================
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
@@ -1768,27 +1758,25 @@ else:
         has_ex = s_date in diaries and (bool(diaries[s_date].get("content", "").strip()) or bool(diaries[s_date].get("drawing", "")))
         ex_data = diaries.get(s_date, {})
 
-        # 스케치 레이아웃 상단: 타이틀 + 동그라미 스티커/색상 버튼
+        # 세션 상태 기반 텍스트 동기화 키 생성
+        content_session_key = f"diary_content_{s_date}"
+        if content_session_key not in st.session_state:
+            st.session_state[content_session_key] = ex_data.get("content", "")
+
         col_title, col_stk, col_clr = st.columns([6, 1, 1])
         with col_title:
             st.markdown(f"# {app_title.split()[0]} DIARY")
         with col_stk:
             st.markdown('<div class="circle-icon-btn">', unsafe_allow_html=True)
             if st.button("🏷️", key="btn_circle_stk"):
-                if "show_sticker_box" not in st.session_state:
-                    st.session_state.show_sticker_box = True
-                else:
-                    st.session_state.show_sticker_box = not st.session_state.show_sticker_box
+                st.session_state.show_sticker_box = not st.session_state.get("show_sticker_box", False)
                 st.rerun()
             st.caption("스티커")
             st.markdown('</div>', unsafe_allow_html=True)
         with col_clr:
             st.markdown('<div class="circle-icon-btn">', unsafe_allow_html=True)
             if st.button("🎨", key="btn_circle_clr"):
-                if "show_color_picker" not in st.session_state:
-                    st.session_state.show_color_picker = True
-                else:
-                    st.session_state.show_color_picker = not st.session_state.show_color_picker
+                st.session_state.show_color_picker = not st.session_state.get("show_color_picker", False)
                 st.rerun()
             st.caption("색상")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1799,13 +1787,14 @@ else:
                 st.session_state.page_custom_bg = new_bg
                 st.rerun()
 
+        # 스티커 선택 및 추가 로직
         if st.session_state.get("show_sticker_box", False):
-            st.markdown("### ✨ 스티커 선택")
+            st.markdown("### ✨ 스티커 선택 (클릭하면 본문 맨 뒤에 추가돼요!)")
             STICKER_CATEGORIES = {
-                "🎀 마스킹 테이프": ["🏷️ 핑크 체크 마테", "🏷️ 옐로우 도트 마테", "🏷️ 블루 스트라이프 마테", "🏷️ 보라하트 마테"],
-                "🖍️ 형광펜 밑줄 & 박스": ["🖍️ 핑크 형광펜 밑줄", "🖍️ 노랑 형광펜 밑줄", "🖍️ 연두 형광펜 밑줄", "🖍️ 하늘색 형광펜 밑줄"],
-                "⭕ 색연필 도형": ["⭕ 빨간 동그라미", "🟦 파란 네모", "⭐ 노란 별 도형", "📍 핑크 하트 도형"],
-                "💖 감성 모양 스티커": ["💖 반짝이 하트", "🌸 벚꽃잎", "🍀 네잎클로버", "🌙 초승달", "🧸 곰돌이 인형"]
+                "🎀 마스킹 테이프": ["🏷️[핑크 체크 마테]", "🏷️[옐로우 도트 마테]", "🏷️[블루 스트라이프 마테]", "🏷️[보라하트 마테]"],
+                "🖍️ 형광펜 밑줄 & 박스": ["🖍️[핑크 형광펜]", "🖍️[노랑 형광펜]", "🖍️[연두 형광펜]", "🖍️[하늘색 형광펜]"],
+                "⭕ 색연필 도형": ["⭕[동그라미]", "🟦[네모]", "⭐[별 도형]", "📍[하트 도형]"],
+                "💖 감성 모양 스티커": ["💖반짝이하트", "🌸벚꽃잎", "🍀네잎클로버", "🌙초승달", "🧸곰돌이"]
             }
             selected_sticker_cat = st.selectbox("스티커 테마 범주 선택", list(STICKER_CATEGORIES.keys()))
             sticker_cols = st.columns(4)
@@ -1813,10 +1802,11 @@ else:
                 col_idx = idx % 4
                 with sticker_cols[col_idx]:
                     if st.button(stk, key=f"stk_{stk}", use_container_width=True):
-                        st.toast(f"'{stk}' 스티커가 추가되었습니다!", icon="✨")
+                        st.session_state[content_session_key] += f" {stk} "
+                        st.toast(f"'{stk}' 스티커가 본문에 추가되었습니다!", icon="✨")
+                        st.rerun()
             st.markdown("---")
 
-        # 스케치 날짜 및 감정 선택
         col_date, col_emo = st.columns([1, 1])
         with col_date:
             st.markdown(f"### ✏️ 날짜: **{s_date}**")
@@ -1825,59 +1815,19 @@ else:
             sel_emo = st.selectbox("오늘의 감정:", STANDARD_EMOTIONS, index=idx, label_visibility="collapsed")
             sel_emoji = sel_emo.split()[0]
 
-        # 제목 입력
         diary_title = st.text_input("제목:", placeholder="제목을 입력하세요...", key=f"title_{s_date}")
 
-        # 본문 줄노트 에디터
-        content_val = ex_data.get("content", "")
-        note_editor_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    background-color: transparent;
-                    margin: 0;
-                    padding: 0;
-                    font-family: {theme_cfg['font_family']};
-                }}
-                textarea {{
-                    width: 100%;
-                    height: 320px;
-                    background-color: transparent !important;
-                    background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
-                    background-size: 100% 32px !important;
-                    border: none !important;
-                    outline: none !important;
-                    color: {theme_cfg['text']} !important;
-                    font-family: {theme_cfg['font_family']} !important;
-                    font-size: 1.2rem !important;
-                    line-height: 32px !important;
-                    padding-top: 4px !important;
-                    resize: vertical;
-                }}
-            </style>
-        </head>
-        <body>
-            <textarea id="noteTextarea" placeholder="내용을 기록하세요...">{content_val}</textarea>
-            <script>
-                const textarea = document.getElementById('noteTextarea');
-                textarea.addEventListener('input', function() {{
-                    const parentInput = window.parent.document.querySelector('input[aria-label="hidden_content_input"]');
-                    if (parentInput) {{
-                        parentInput.value = textarea.value;
-                        parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    }}
-                }});
-            </script>
-        </body>
-        </html>
-        """
-        content_input_val = st.text_input("hidden_content_input", value=content_val, label_visibility="collapsed", key=f"content_hidden_{s_date}")
-        components.html(note_editor_html, height=340)
-        txt = content_input_val
+        # 본문 줄노트 작성 (Streamlit 기본 텍스트 에디터 활용으로 내용 유실 방지)
+        txt = st.text_area(
+            "오늘의 이야기:",
+            value=st.session_state[content_session_key],
+            height=320,
+            placeholder="마음속 이야기를 줄노트에 적어보세요...",
+            key=f"textarea_content_{s_date}",
+            label_visibility="collapsed"
+        )
+        st.session_state[content_session_key] = txt
 
-        # 오늘의 질문 섹션
         st.markdown("---")
         daily_q = get_daily_question(s_date)
         saved_q_answer = get_daily_answer(current_user, s_date)
@@ -1885,7 +1835,6 @@ else:
         st.write(f"**{daily_q}**")
         daily_ans_input = st.text_area("답변 작성:", value=saved_q_answer, height=80, placeholder="답변을 입력하세요...", label_visibility="collapsed")
 
-        # 공개 범위 설정 섹션
         st.markdown("---")
         st.markdown("### 🔒 공개범위 설정")
         friends = get_user_friends(current_user)
@@ -1910,7 +1859,6 @@ else:
             else:
                 st.info("등록된 친구가 없습니다.")
 
-        # 저장 및 하단 버튼
         st.markdown("---")
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
@@ -1952,20 +1900,14 @@ else:
         with col_stk:
             st.markdown('<div class="circle-icon-btn">', unsafe_allow_html=True)
             if st.button("🏷️", key="btn_circle_stk_ex"):
-                if "show_ex_sticker_box" not in st.session_state:
-                    st.session_state.show_ex_sticker_box = True
-                else:
-                    st.session_state.show_ex_sticker_box = not st.session_state.show_ex_sticker_box
+                st.session_state.show_ex_sticker_box = not st.session_state.get("show_ex_sticker_box", False)
                 st.rerun()
             st.caption("스티커")
             st.markdown('</div>', unsafe_allow_html=True)
         with col_clr:
             st.markdown('<div class="circle-icon-btn">', unsafe_allow_html=True)
             if st.button("🎨", key="btn_circle_clr_ex"):
-                if "show_color_picker" not in st.session_state:
-                    st.session_state.show_color_picker = True
-                else:
-                    st.session_state.show_color_picker = not st.session_state.show_color_picker
+                st.session_state.show_color_picker = not st.session_state.get("show_color_picker", False)
                 st.rerun()
             st.caption("색상")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1976,13 +1918,20 @@ else:
                 st.session_state.page_custom_bg = new_bg
                 st.rerun()
 
+        e_diaries = get_exchange_diaries(eid).get(s_date, [])
+        my_e_diary = next((d for d in e_diaries if d['username'] == current_user), None)
+        
+        ex_content_key = f"ex_content_{eid}_{s_date}"
+        if ex_content_key not in st.session_state:
+            st.session_state[ex_content_key] = my_e_diary['content'] if my_e_diary else ""
+
         if st.session_state.get("show_ex_sticker_box", False):
             st.markdown("### ✨ 스티커 선택")
             STICKER_CATEGORIES = {
-                "🎀 마스킹 테이프": ["🏷️ 핑크 체크 마테", "🏷️ 옐로우 도트 마테", "🏷️ 블루 스트라이프 마테", "🏷️ 보라하트 마테"],
-                "🖍️ 형광펜 밑줄 & 박스": ["🖍️ 핑크 형광펜 밑줄", "🖍️ 노랑 형광펜 밑줄", "🖍️ 연두 형광펜 밑줄", "🖍️ 하늘색 형광펜 밑줄"],
-                "⭕ 색연필 도형": ["⭕ 빨간 동그라미", "🟦 파란 네모", "⭐ 노란 별 도형", "📍 핑크 하트 도형"],
-                "💖 감성 모양 스티커": ["💖 반짝이 하트", "🌸 벚꽃잎", "🍀 네잎클로버", "🌙 초승달", "🧸 곰돌이 인형"]
+                "🎀 마스킹 테이프": ["🏷️[핑크 체크 마테]", "🏷️[옐로우 도트 마테]", "🏷️[블루 스트라이프 마테]", "🏷️[보라하트 마테]"],
+                "🖍️ 형광펜 밑줄 & 박스": ["🖍️[핑크 형광펜]", "🖍️[노랑 형광펜]", "🖍️[연두 형광펜]", "🖍️[하늘색 형광펜]"],
+                "⭕ 색연필 도형": ["⭕[동그라미]", "🟦[네모]", "⭐[별 도형]", "📍[하트 도형]"],
+                "💖 감성 모양 스티커": ["💖반짝이하트", "🌸벚꽃잎", "🍀네잎클로버", "🌙초승달", "🧸곰돌이"]
             }
             selected_ex_stk_cat = st.selectbox("스티커 테마 범주 선택", list(STICKER_CATEGORIES.keys()), key="ex_stk_cat")
             ex_stk_cols = st.columns(4)
@@ -1990,13 +1939,12 @@ else:
                 col_idx = idx % 4
                 with ex_stk_cols[col_idx]:
                     if st.button(stk, key=f"ex_stk_{stk}", use_container_width=True):
-                        st.toast(f"'{stk}' 스티커가 추가되었습니다!", icon="✨")
+                        st.session_state[ex_content_key] += f" {stk} "
+                        st.toast(f"'{stk}' 스티커가 교환일기에 추가되었습니다!", icon="✨")
+                        st.rerun()
             st.markdown("---")
 
-        e_diaries = get_exchange_diaries(eid).get(s_date, [])
-        my_e_diary = next((d for d in e_diaries if d['username'] == current_user), None)
         other_e_diaries = [d for d in e_diaries if d['username'] != current_user]
-
         if other_e_diaries:
             st.subheader("💌 다른 멤버들의 일기")
             for od in other_e_diaries:
@@ -2016,54 +1964,15 @@ else:
             sel_emo = st.selectbox("오늘 멤버들에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx, label_visibility="collapsed")
             sel_emoji = sel_emo.split()[0]
 
-        my_ex_content_val = my_e_diary['content'] if my_e_diary else ""
-
-        ex_note_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    background-color: transparent;
-                    margin: 0;
-                    padding: 0;
-                    font-family: {theme_cfg['font_family']};
-                }}
-                textarea {{
-                    width: 100%;
-                    height: 320px;
-                    background-color: transparent !important;
-                    background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
-                    background-size: 100% 32px !important;
-                    border: none !important;
-                    outline: none !important;
-                    color: {theme_cfg['text']} !important;
-                    font-family: {theme_cfg['font_family']} !important;
-                    font-size: 1.2rem !important;
-                    line-height: 32px !important;
-                    padding-top: 4px !important;
-                    resize: vertical;
-                }}
-            </style>
-        </head>
-        <body>
-            <textarea id="exTextarea" placeholder="멤버들에게 전할 이야기를 적어보세요...">{my_ex_content_val}</textarea>
-            <script>
-                const exTextarea = document.getElementById('exTextarea');
-                exTextarea.addEventListener('input', function() {{
-                    const parentInput = window.parent.document.querySelector('input[aria-label="hidden_ex_content_input"]');
-                    if (parentInput) {{
-                        parentInput.value = exTextarea.value;
-                        parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    }}
-                }});
-            </script>
-        </body>
-        </html>
-        """
-        ex_content_input_val = st.text_input("hidden_ex_content_input", value=my_ex_content_val, label_visibility="collapsed", key=f"ex_content_hidden_{s_date}")
-        components.html(ex_note_html, height=340)
-        txt = ex_content_input_val
+        txt = st.text_area(
+            "멤버들에게 전할 이야기:",
+            value=st.session_state[ex_content_key],
+            height=320,
+            placeholder="멤버들에게 전할 이야기를 적어보세요...",
+            key=f"textarea_ex_content_{s_date}",
+            label_visibility="collapsed"
+        )
+        st.session_state[ex_content_key] = txt
 
         st.markdown("---")
         curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
