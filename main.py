@@ -939,6 +939,7 @@ if st.session_state.user is not None:
             letter-spacing: 1px;
         }}
         
+        /* 아날로그 줄노트 스타일 (입력창 배경 및 줄간격 완벽 일치) */
         .diary-note-container {{
             background-color: {theme_cfg['paper_bg']} !important;
             color: {theme_cfg['paper_text']} !important;
@@ -951,11 +952,12 @@ if st.session_state.user is not None:
                 linear-gradient(90deg, transparent 32px, #FF808033 32px, #FF808033 34px, transparent 34px),
                 linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
             background-size: 100% 32px !important;
-            line-height: 32px !important;
         }}
 
         .diary-note-container textarea, .diary-note-container .stTextArea textarea {{
             background-color: transparent !important;
+            background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
+            background-size: 100% 32px !important;
             border: none !important;
             border-radius: 0px !important;
             color: {theme_cfg['paper_text']} !important;
@@ -1363,7 +1365,6 @@ else:
                 f_icon = f_row[1] if (f_row and f_row[1]) else (f['friend_icon'] or '🧸')
                 f_stat = f_row[2] if f_row else f['friend_status']
 
-                # 친구 닉네임 버튼 클릭 시 해당 친구의 일기 보기 페이지로 전환
                 if st.button(f"{f_icon} {f_nick}", key=f"btn_view_friend_{f['friend_username']}", use_container_width=True):
                     st.session_state.viewing_friend = {
                         "username": f['friend_username'],
@@ -1413,7 +1414,7 @@ else:
             else:
                 st.warning("교환일기 제목을 입력해 주세요.")
 
-    # 4. 일기 메뉴 (친구 일기 구경하기 메뉴 제거, 친구 목록 클릭으로 대체)
+    # 4. 일기 메뉴
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📖 일기")
     menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기"]
@@ -1702,7 +1703,7 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 4-1: 👥 친구 일기 구경하기 기능 (사이드바 닉네임 클릭 시 진입)
+    # PAGE 4-1: 👥 친구 일기 구경하기 기능
     elif st.session_state.page == "friend_diary_view":
         f_info = st.session_state.viewing_friend
         if not f_info:
@@ -1774,7 +1775,7 @@ else:
             st.session_state.page = "secret_calendar"
             st.rerun()
 
-    # PAGE 5: 비밀/공개 일기 에디터 (오늘의 질문 및 그림판 포함)
+    # PAGE 5: 비밀/공개 일기 에디터
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
         is_pub = (st.session_state.page == "public_editor")
