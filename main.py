@@ -346,6 +346,30 @@ def update_user_theme(username, new_theme, new_main_color, new_sub_color):
     conn.close()
     push_db_to_github(f"Update theme for user {username}")
 
+def delete_user_account(username):
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute("DELETE FROM diaries WHERE username = ?", (username,))
+        c.execute("DELETE FROM daily_answers WHERE username = ?", (username,))
+        c.execute("DELETE FROM exchange_diaries WHERE username = ?", (username,))
+        c.execute("DELETE FROM exchange_members WHERE username = ?", (username,))
+        c.execute("DELETE FROM comments WHERE comment_username = ? OR diary_username = ?", (username, username))
+        c.execute("DELETE FROM schedules WHERE username = ?", (username,))
+        c.execute("DELETE FROM user_ddays WHERE username = ?", (username,))
+        c.execute("DELETE FROM friendships WHERE username = ? OR friend_username = ?", (username, username))
+        c.execute("DELETE FROM friend_requests WHERE sender_username = ? OR receiver_username = ?", (username, username))
+        c.execute("DELETE FROM exchange_invites WHERE sender_username = ? OR receiver_username = ?", (username, username))
+        c.execute("DELETE FROM users WHERE username = ?", (username,))
+        conn.commit()
+        push_db_to_github(f"User account deleted: {username}")
+        return True
+    except Exception as e:
+        print(f"Delete error: {e}")
+        return False
+    finally:
+        conn.close()
+
 def send_friend_request(my_username, friend_code):
     conn = get_connection()
     c = conn.cursor()
@@ -1236,6 +1260,24 @@ else:
             st.session_state.page_custom_bg = THEME_STYLES[selected_theme]["paper_bg"]
             st.success("테마가 적용되었습니다!")
             st.rerun()
+
+    with st.sidebar.expander("⚠️ 계정 관리 (회원탈퇴)"):
+        st.warning("계정을 삭제하면 작성한 모든 일기와 데이터가 영구적으로 삭제되며 복구할 수 없습니다.")
+        confirm_del = st.checkbox("계정 삭제에 동의합니다.")
+        if st.button("🗑️ 회원탈퇴 (계정 삭제)", use_container_width=True):
+            if confirm_del:
+                if delete_user_account(current_user):
+                    st.session_state.user = None
+                    st.session_state.nickname = None
+                    st.session_state.current_exchange_id = ""
+                    st.session_state.viewing_friend = None
+                    st.session_state.page = "secret_calendar"
+                    st.success("계정이 성공적으로 삭제되었습니다.")
+                    st.rerun()
+                else:
+                    st.error("계정 삭제 중 오류가 발생했습니다.")
+            else:
+                st.warning("계정 삭제 동의 체크박스를 체크해 주세요.")
 
     # 2. 일정관리
     st.sidebar.markdown("---")
