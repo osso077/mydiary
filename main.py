@@ -116,10 +116,7 @@ def init_db():
             theme TEXT DEFAULT '포근함',
             main_color TEXT DEFAULT '#DDA15E',
             sub_color TEXT DEFAULT '#BC6C25',
-            invite_code TEXT UNIQUE,
-            exchange_id TEXT DEFAULT '',
-            exchange_type TEXT DEFAULT '연인',
-            exchange_start_date TEXT DEFAULT ''
+            invite_code TEXT UNIQUE
         )
     ''')
     
@@ -145,39 +142,6 @@ def init_db():
             question TEXT,
             answer TEXT,
             PRIMARY KEY (username, date)
-        )
-    ''')
-
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS exchange_rooms (
-            exchange_id TEXT PRIMARY KEY,
-            title TEXT,
-            creator_username TEXT,
-            exchange_type TEXT DEFAULT '친구',
-            exchange_start_date TEXT
-        )
-    ''')
-
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS exchange_members (
-            exchange_id TEXT,
-            username TEXT,
-            PRIMARY KEY (exchange_id, username)
-        )
-    ''')
-
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS exchange_diaries (
-            exchange_id TEXT,
-            date TEXT,
-            username TEXT,
-            nickname TEXT,
-            emotion TEXT,
-            content TEXT,
-            drawing TEXT DEFAULT '',
-            is_public INTEGER DEFAULT 0,
-            views INTEGER DEFAULT 0,
-            PRIMARY KEY (exchange_id, date, username)
         )
     ''')
 
@@ -239,16 +203,6 @@ def init_db():
         )
     ''')
 
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS exchange_invites (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            exchange_id TEXT,
-            sender_username TEXT,
-            receiver_username TEXT,
-            status TEXT DEFAULT 'pending'
-        )
-    ''')
-
     cols = [
         ("users", "nickname TEXT DEFAULT ''"),
         ("users", "birthdate TEXT DEFAULT ''"),
@@ -258,16 +212,10 @@ def init_db():
         ("users", "main_color TEXT DEFAULT '#DDA15E'"),
         ("users", "sub_color TEXT DEFAULT '#BC6C25'"),
         ("users", "invite_code TEXT DEFAULT ''"),
-        ("users", "exchange_id TEXT DEFAULT ''"),
-        ("users", "exchange_type TEXT DEFAULT '연인'"),
-        ("users", "exchange_start_date TEXT DEFAULT ''"),
         ("diaries", "drawing TEXT DEFAULT ''"),
         ("diaries", "is_public INTEGER DEFAULT 0"),
         ("diaries", "allow_friends TEXT DEFAULT ''"),
         ("diaries", "views INTEGER DEFAULT 0"),
-        ("exchange_diaries", "drawing TEXT DEFAULT ''"),
-        ("exchange_diaries", "is_public INTEGER DEFAULT 0"),
-        ("exchange_diaries", "views INTEGER DEFAULT 0"),
         ("friendships", "friend_nickname TEXT DEFAULT ''"),
         ("friendships", "friend_icon TEXT DEFAULT '🧸'"),
         ("friendships", "friend_status TEXT DEFAULT ''")
@@ -305,15 +253,15 @@ def register_user(username, password, nickname, birthdate=""):
 def login_user(username, password):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color, invite_code, exchange_id, exchange_type, exchange_start_date FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color, invite_code FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
         stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
             inv_code = row[8] if row[8] else generate_invite_code()
-            return True, row[1], row[2], (row[3] or '🧸'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25'), inv_code, row[9], row[10], row[11]
-    return False, None, None, '🧸', '', '포근함', '#DDA15E', '#BC6C25', '', '', '연인', ''
+            return True, row[1], row[2], (row[3] or '🧸'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25'), inv_code
+    return False, None, None, '🧸', '', '포근함', '#DDA15E', '#BC6C25', ''
 
 def update_user_info(username, new_nickname, new_birthdate, new_profile_icon, new_status_message):
     conn = get_connection()
@@ -352,14 +300,11 @@ def delete_user_account(username):
     try:
         c.execute("DELETE FROM diaries WHERE username = ?", (username,))
         c.execute("DELETE FROM daily_answers WHERE username = ?", (username,))
-        c.execute("DELETE FROM exchange_diaries WHERE username = ?", (username,))
-        c.execute("DELETE FROM exchange_members WHERE username = ?", (username,))
         c.execute("DELETE FROM comments WHERE comment_username = ? OR diary_username = ?", (username, username))
         c.execute("DELETE FROM schedules WHERE username = ?", (username,))
         c.execute("DELETE FROM user_ddays WHERE username = ?", (username,))
         c.execute("DELETE FROM friendships WHERE username = ? OR friend_username = ?", (username, username))
         c.execute("DELETE FROM friend_requests WHERE sender_username = ? OR receiver_username = ?", (username, username))
-        c.execute("DELETE FROM exchange_invites WHERE sender_username = ? OR receiver_username = ?", (username, username))
         c.execute("DELETE FROM users WHERE username = ?", (username,))
         conn.commit()
         push_db_to_github(f"User account deleted: {username}")
@@ -468,112 +413,6 @@ def delete_friend(friendship_id):
     conn.close()
     push_db_to_github("Friend deleted")
 
-# --- 다대다 교환일기 관련 함수 ---
-def create_exchange_room(title, creator_username, ex_type, start_date):
-    conn = get_connection()
-    c = conn.cursor()
-    eid = f"ex_{creator_username}_{int(datetime.datetime.now().timestamp())}"
-    c.execute("INSERT INTO exchange_rooms (exchange_id, title, creator_username, exchange_type, exchange_start_date) VALUES (?, ?, ?, ?, ?)",
-              (eid, title, creator_username, ex_type, start_date))
-    c.execute("INSERT INTO exchange_members (exchange_id, username) VALUES (?, ?)", (eid, creator_username))
-    conn.commit()
-    conn.close()
-    push_db_to_github("Exchange room created")
-    return eid
-
-def get_user_exchange_rooms(username):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT r.exchange_id, r.title, r.creator_username, r.exchange_type, r.exchange_start_date 
-        FROM exchange_rooms r
-        JOIN exchange_members m ON r.exchange_id = m.exchange_id
-        WHERE m.username = ?
-    ''', (username,))
-    rows = c.fetchall()
-    conn.close()
-    return [{"exchange_id": r[0], "title": r[1], "creator_username": r[2], "exchange_type": r[3], "exchange_start_date": r[4]} for r in rows]
-
-def get_exchange_room_info(exchange_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT exchange_id, title, creator_username, exchange_type, exchange_start_date FROM exchange_rooms WHERE exchange_id = ?", (exchange_id,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        return {"exchange_id": row[0], "title": row[1], "creator_username": row[2], "exchange_type": row[3], "exchange_start_date": row[4]}
-    return None
-
-def get_exchange_room_members(exchange_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT u.username, u.nickname, u.profile_icon, u.status_message 
-        FROM exchange_members m
-        JOIN users u ON m.username = u.username
-        WHERE m.exchange_id = ?
-    ''', (exchange_id,))
-    rows = c.fetchall()
-    conn.close()
-    return [{"username": r[0], "nickname": r[1], "profile_icon": r[2] or '🧸', "status_message": r[3] or ''} for r in rows]
-
-def send_exchange_invite(exchange_id, sender_username, receiver_username):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT id FROM exchange_members WHERE exchange_id = ? AND username = ?", (exchange_id, receiver_username))
-    if c.fetchone():
-        conn.close()
-        return False, "이미 참여 중인 멤버입니다."
-    
-    c.execute("SELECT id FROM exchange_invites WHERE exchange_id = ? AND receiver_username = ? AND status = 'pending'", (exchange_id, receiver_username))
-    if c.fetchone():
-        conn.close()
-        return False, "이미 초대 요청을 보냈습니다."
-
-    c.execute("INSERT INTO exchange_invites (exchange_id, sender_username, receiver_username, status) VALUES (?, ?, ?, 'pending')",
-              (exchange_id, sender_username, receiver_username))
-    conn.commit()
-    conn.close()
-    push_db_to_github("Exchange invite sent")
-    return True, "교환일기 초대장을 보냈습니다!"
-
-def get_pending_exchange_invites(username):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT ei.id, ei.exchange_id, r.title, u.nickname, u.profile_icon 
-        FROM exchange_invites ei
-        JOIN exchange_rooms r ON ei.exchange_id = r.exchange_id
-        JOIN users u ON ei.sender_username = u.username
-        WHERE ei.receiver_username = ? AND ei.status = 'pending'
-    ''', (username,))
-    rows = c.fetchall()
-    conn.close()
-    return [{"id": r[0], "exchange_id": r[1], "title": r[2], "sender_nickname": r[3], "sender_icon": r[4] or '🧸'} for r in rows]
-
-def accept_exchange_invite(invite_id, my_username):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT exchange_id FROM exchange_invites WHERE id = ? AND receiver_username = ?", (invite_id, my_username))
-    row = c.fetchone()
-    if not row:
-        conn.close()
-        return
-    eid = row[0]
-    c.execute("UPDATE exchange_invites SET status = 'accepted' WHERE id = ?", (invite_id,))
-    c.execute("INSERT OR IGNORE INTO exchange_members (exchange_id, username) VALUES (?, ?)", (eid, my_username))
-    conn.commit()
-    conn.close()
-    push_db_to_github("Exchange invite accepted")
-
-def reject_exchange_invite(invite_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM exchange_invites WHERE id = ?", (invite_id,))
-    conn.commit()
-    conn.close()
-    push_db_to_github("Exchange invite rejected")
-
 def get_user_ddays(username):
     conn = get_connection()
     c = conn.cursor()
@@ -624,11 +463,6 @@ def get_all_public_diaries(current_user):
         FROM diaries d
         JOIN users u ON d.username = u.username
         WHERE d.is_public = 1 OR d.allow_friends LIKE ?
-        UNION ALL
-        SELECT ed.date, ed.emotion, ed.content, ed.drawing, ed.nickname, ed.username, ed.views, 'exchange' AS type, COALESCE(u.profile_icon, '🧸') AS profile_icon, ed.is_public, '' AS allow_friends
-        FROM exchange_diaries ed
-        LEFT JOIN users u ON ed.username = u.username
-        WHERE ed.is_public = 1
         ORDER BY date DESC
     ''', (f"%{current_user}%",))
     rows = c.fetchall()
@@ -645,15 +479,12 @@ def get_all_public_diaries(current_user):
             })
     return public_list
 
-def increment_public_views(username, date_str, diary_type, current_user):
+def increment_public_views(username, date_str, current_user):
     if username == current_user:
         return
     conn = get_connection()
     c = conn.cursor()
-    if diary_type == 'individual':
-        c.execute("UPDATE diaries SET views = views + 1 WHERE username = ? AND date = ?", (username, date_str))
-    else:
-        c.execute("UPDATE exchange_diaries SET views = views + 1 WHERE username = ? AND date = ?", (username, date_str))
+    c.execute("UPDATE diaries SET views = views + 1 WHERE username = ? AND date = ?", (username, date_str))
     conn.commit()
     conn.close()
 
@@ -700,34 +531,6 @@ def save_daily_answer(username, date_str, question, answer):
     conn.commit()
     conn.close()
     push_db_to_github(f"Update daily answer for {date_str}")
-
-def get_exchange_diaries(exchange_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT date, username, nickname, emotion, content, drawing, is_public, views FROM exchange_diaries WHERE exchange_id = ?", (exchange_id,))
-    rows = c.fetchall()
-    conn.close()
-    
-    result = {}
-    for r in rows:
-        dt, un, nk, em, ct, dr, ip, vw = r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
-        if dt not in result:
-            result[dt] = []
-        result[dt].append({"username": un, "nickname": nk, "emotion": em, "content": ct, "drawing": dr, "is_public": ip, "views": vw})
-    return result
-
-def save_exchange_diary(exchange_id, date_str, username, nickname, emotion, content, drawing, is_public):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO exchange_diaries (exchange_id, date, username, nickname, emotion, content, drawing, is_public)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(exchange_id, date, username) DO UPDATE SET
-            emotion=excluded.emotion, content=excluded.content, drawing=excluded.drawing, nickname=excluded.nickname, is_public=excluded.is_public
-    ''', (exchange_id, date_str, username, nickname, emotion, content, drawing, 1 if is_public else 0))
-    conn.commit()
-    conn.close()
-    push_db_to_github(f"Update exchange diary for {date_str}")
 
 def add_schedule(username, date_str, title, category):
     color = SCHEDULE_CATEGORIES.get(category, "#8B5CF6")
@@ -829,8 +632,6 @@ if "sub_color" not in st.session_state:
     st.session_state.sub_color = "#06B6D4"
 if "invite_code" not in st.session_state:
     st.session_state.invite_code = ""
-if "current_exchange_id" not in st.session_state:
-    st.session_state.current_exchange_id = ""
 if "viewing_friend" not in st.session_state:
     st.session_state.viewing_friend = None
 if "page" not in st.session_state:
@@ -950,18 +751,17 @@ app_title = theme_cfg["title"]
 if "page_custom_bg" not in st.session_state:
     st.session_state.page_custom_bg = theme_cfg["paper_bg"]
 
-is_editor_page = st.session_state.page in ["secret_editor", "public_editor", "exchange_editor"]
+is_editor_page = st.session_state.page in ["secret_editor", "public_editor"]
 active_bg_color = st.session_state.page_custom_bg if is_editor_page else theme_cfg['bg']
 
 # ---------------------------------------------------------
-# 동적 CSS 주입 (일기 작성 페이지 전체 배경 완벽 반영)
+# 동적 CSS 주입
 # ---------------------------------------------------------
 if st.session_state.user is not None:
     st.markdown(f"""
         <style>
         @import url('{theme_cfg['font_import']}');
 
-        /* Streamlit 전체 앱 배경 및 본문 영역에 선택된 배경색 적용 */
         html, body, .stApp, .main, [data-testid="stVerticalBlock"] {{
             background-color: {active_bg_color} !important;
             color: {theme_cfg['text']} !important;
@@ -1001,7 +801,6 @@ if st.session_state.user is not None:
             transform: translateY(-2px) scale(1.02);
         }}
 
-        /* 동그라미 아이콘 전용 버튼 스타일 */
         .circle-icon-btn > button {{
             border-radius: 50% !important;
             width: 50px !important;
@@ -1114,7 +913,7 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname, birthdate, profile_icon, status_message, theme, m_color, s_color, inv_code, _, _, _ = login_user(username_input, password_input)
+                is_success, nickname, birthdate, profile_icon, status_message, theme, m_color, s_color, inv_code = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
@@ -1125,12 +924,6 @@ if st.session_state.user is None:
                     st.session_state.main_color = m_color
                     st.session_state.sub_color = s_color
                     st.session_state.invite_code = inv_code
-                    
-                    my_rooms = get_user_exchange_rooms(username_input)
-                    if my_rooms:
-                        st.session_state.current_exchange_id = my_rooms[0]["exchange_id"]
-                    else:
-                        st.session_state.current_exchange_id = ""
 
                     st.session_state.page = "secret_calendar"
                     st.success(f"{st.session_state.nickname}님 환영합니다!")
@@ -1269,7 +1062,6 @@ else:
                 if delete_user_account(current_user):
                     st.session_state.user = None
                     st.session_state.nickname = None
-                    st.session_state.current_exchange_id = ""
                     st.session_state.viewing_friend = None
                     st.session_state.page = "secret_calendar"
                     st.success("계정이 성공적으로 삭제되었습니다.")
@@ -1324,7 +1116,7 @@ else:
             else:
                 st.warning("디데이 제목을 입력해 주세요.")
 
-    # 3. 친구기능 & 교환일기 초대 승인
+    # 3. 친구기능
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 👥 친구기능")
     with st.sidebar.expander("👥 친구 관리"):
@@ -1355,24 +1147,6 @@ else:
                     if st.button("❌ 거절", key=f"reject_req_{req['id']}"):
                         reject_friend_request(req['id'])
                         st.rerun()
-
-        pending_ex_invites = get_pending_exchange_invites(current_user)
-        if pending_ex_invites:
-            st.markdown("---")
-            st.markdown("💌 **받은 교환일기 초대**")
-            for einv in pending_ex_invites:
-                st.write(f"{einv['sender_icon']} **{einv['sender_nickname']}**님의 교환일기 방 **[{einv['title']}]** 초대")
-                ec1, ec2 = st.columns(2)
-                with ec1:
-                    if st.button("✔️ 수락", key=f"accept_einv_{einv['id']}"):
-                        accept_exchange_invite(einv['id'], current_user)
-                        st.session_state.current_exchange_id = einv['exchange_id']
-                        st.success("교환일기에 참여하였습니다!")
-                        st.rerun()
-                with ec2:
-                    if st.button("❌ 거절", key=f"reject_einv_{einv['id']}"):
-                        reject_exchange_invite(einv['id'])
-                        st.rerun()
         
         st.markdown("---")
         st.markdown("📋 **내 친구 목록** *(클릭하여 일기 구경)*")
@@ -1400,18 +1174,6 @@ else:
 
                 if f_stat:
                     st.caption(f"💬 {f_stat}")
-                
-                my_rooms = get_user_exchange_rooms(current_user)
-                if my_rooms:
-                    room_options = {r['title']: r['exchange_id'] for r in my_rooms}
-                    sel_room_title = st.selectbox("내 교환일기로 초대", list(room_options.keys()), key=f"invite_room_sel_{f['friend_username']}")
-                    if st.button("💌 교환일기 초대 보내기", key=f"btn_send_einv_{f['friend_username']}"):
-                        target_eid = room_options[sel_room_title]
-                        ok_msg, msg_text = send_exchange_invite(target_eid, current_user, f['friend_username'])
-                        if ok_msg:
-                            st.success(msg_text)
-                        else:
-                            st.warning(msg_text)
 
                 if st.button("🗑️ 친구 삭제", key=f"del_f_{f['id']}"):
                     delete_friend(f['id'])
@@ -1423,25 +1185,10 @@ else:
         else:
             st.caption("등록된 친구가 없습니다.")
 
-    with st.sidebar.expander("💌 다대다 교환일기 만들기"):
-        st.write("여러 명이서 함께 쓸 수 있는 새로운 교환일기 모임을 만드세요!")
-        new_room_title = st.text_input("교환일기 제목 (방 이름)", placeholder="예: 우리들의 힐링 노트")
-        new_room_type = st.radio("모임 성격", ["친구", "연인", "스터디/모임"], horizontal=True, key="room_type_radio")
-        new_room_start = st.date_input("시작일", value=today_dt, max_value=today_dt, key="room_start_date")
-        
-        if st.button("✨ 새 교환일기 만들기", use_container_width=True):
-            if new_room_title.strip():
-                eid = create_exchange_room(new_room_title.strip(), current_user, new_room_type, new_room_start.strftime("%Y-%m-%d"))
-                st.session_state.current_exchange_id = eid
-                st.success("교환일기 방이 생성되었습니다!")
-                st.rerun()
-            else:
-                st.warning("교환일기 제목을 입력해 주세요.")
-
     # 4. 일기 메뉴
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📖 일기")
-    menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "💌 교환일기", "🌐 공개일기"]
+    menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "🌐 공개일기"]
     nav_choice = st.sidebar.radio("일기 메뉴", menu_options, label_visibility="collapsed")
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
@@ -1452,14 +1199,6 @@ else:
         st.session_state.viewing_friend = None
         st.session_state.page = "schedule_calendar"
         st.rerun()
-    elif nav_choice == "💌 교환일기" and st.session_state.page not in ["exchange_calendar", "exchange_editor", "exchange_setup"]:
-        st.session_state.viewing_friend = None
-        my_rooms = get_user_exchange_rooms(current_user)
-        if my_rooms:
-            st.session_state.page = "exchange_calendar"
-        else:
-            st.session_state.page = "exchange_setup"
-        st.rerun()
     elif nav_choice == "🌐 공개일기" and st.session_state.page not in ["public_calendar", "public_editor"]:
         st.session_state.viewing_friend = None
         st.session_state.page = "public_calendar"
@@ -1469,7 +1208,6 @@ else:
     if st.sidebar.button("🔒 로그아웃", use_container_width=True):
         st.session_state.user = None
         st.session_state.nickname = None
-        st.session_state.current_exchange_id = ""
         st.session_state.viewing_friend = None
         st.session_state.page = "secret_calendar"
         st.rerun()
@@ -1591,76 +1329,7 @@ else:
                 st.session_state.page = "schedule_calendar"
                 st.rerun()
 
-    # PAGE 3-0: 💌 교환일기 방 없을 때 생성 화면
-    elif st.session_state.page == "exchange_setup":
-        st.title(app_title)
-        st.header("💌 함께 쓰는 다대다 교환일기")
-        st.write("아직 참여 중인 교환일기 방이 없습니다. 새로운 교환일기 방을 만들거나 친구의 초대를 기다려주세요!")
-        
-        new_title = st.text_input("교환일기 방 제목", placeholder="예: 우리들의 비밀 수다방")
-        room_type = st.radio("관계/모임 성격", ["친구", "연인", "스터디/모임"], horizontal=True, key="setup_room_type")
-        start_dt = st.date_input("시작일", value=today_dt, max_value=today_dt, key="setup_start_dt")
-        
-        if st.button("✨ 교환일기 방 만들기", use_container_width=True):
-            if new_title.strip():
-                eid = create_exchange_room(new_title.strip(), current_user, room_type, start_dt.strftime("%Y-%m-%d"))
-                st.session_state.current_exchange_id = eid
-                st.success("교환일기 방이 생성되었습니다!")
-                st.session_state.page = "exchange_calendar"
-                st.rerun()
-            else:
-                st.warning("방 제목을 입력해 주세요.")
-
-    # PAGE 3-1: 💌 교환일기 달력 (다대다 지원)
-    elif st.session_state.page == "exchange_calendar":
-        st.title(app_title)
-        my_rooms = get_user_exchange_rooms(current_user)
-        if not my_rooms:
-            st.session_state.page = "exchange_setup"
-            st.rerun()
-
-        room_dict = {f"{r['title']} ({r['exchange_type']})": r for r in my_rooms}
-        current_room = next((r for r in my_rooms if r['exchange_id'] == st.session_state.current_exchange_id), my_rooms[0])
-        
-        current_room_label = f"{current_room['title']} ({current_room['exchange_type']})"
-        selected_room_label = st.selectbox("참여 중인 교환일기 선택", list(room_dict.keys()), index=list(room_dict.keys()).index(current_room_label))
-        
-        st.session_state.current_exchange_id = room_dict[selected_room_label]['exchange_id']
-        active_eid = st.session_state.current_exchange_id
-        
-        room_info = get_exchange_room_info(active_eid)
-        members = get_exchange_room_members(active_eid)
-        
-        st.header(f"💌 {room_info['title']} 교환일기")
-        member_str = ", ".join([f"{m['profile_icon']} {m['nickname']}" for m in members])
-        st.info(f"👥 **참여 멤버 ({len(members)}명)**: {member_str}")
-
-        ex_diaries = get_exchange_diaries(active_eid)
-
-        calendar_events = []
-        for date_str, diary_list in ex_diaries.items():
-            for d in diary_list:
-                vis_icon = "🔒" if d.get("is_public", 0) == 0 else "🌐"
-                calendar_events.append({
-                    "title": f"{vis_icon} {d['nickname']}: {d['emotion']}",
-                    "start": date_str, "end": date_str, "allDay": True,
-                    "color": sub_color
-                })
-
-        cal_res_e = calendar(events=calendar_events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "initialView": "dayGridMonth", "selectable": True, "height": 560}, key=f"exchange_cal_{st.session_state.theme}_{main_color}_{sub_color}")
-
-        clicked_date_e = None
-        if cal_res_e and "dateClick" in cal_res_e:
-            clicked_date_e = parse_calendar_date(cal_res_e["dateClick"].get("date"))
-        elif cal_res_e and "select" in cal_res_e:
-            clicked_date_e = parse_calendar_date(cal_res_e["select"].get("start"))
-
-        if clicked_date_e:
-            st.session_state.selected_date = clicked_date_e
-            st.session_state.page = "exchange_editor"
-            st.rerun()
-
-    # PAGE 4: 🌐 공개일기 달력 / 모아보기
+    # PAGE 3: 🌐 공개일기 달력 / 모아보기
     elif st.session_state.page == "public_calendar":
         st.title(app_title)
         st.header("🌐 공유하는 공개일기")
@@ -1692,7 +1361,7 @@ else:
             all_publics = get_all_public_diaries(current_user)
             if all_publics:
                 for item in all_publics:
-                    increment_public_views(item['username'], item['date'], item['type'], current_user)
+                    increment_public_views(item['username'], item['date'], current_user)
                     
                     with st.container():
                         p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
@@ -1729,7 +1398,7 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 4-1: 👥 친구 일기 구경하기 기능
+    # PAGE 3-1: 👥 친구 일기 구경하기 기능
     elif st.session_state.page == "friend_diary_view":
         st.title(app_title)
         f_info = st.session_state.viewing_friend
@@ -1744,54 +1413,25 @@ else:
         st.header(f"👥 친구 일기 구경하기")
         st.markdown(f"### ✨ {f_icon} **{f_nick}** 님의 일기장")
         
-        tab_f1, tab_f2 = st.tabs(["🌐 공개 일기", "💌 함께 참여중인 교환일기"])
+        all_pubs = get_all_public_diaries(current_user)
+        friend_pubs = [p for p in all_pubs if p['username'] == f_uname]
         
-        with tab_f1:
-            all_pubs = get_all_public_diaries(current_user)
-            friend_pubs = [p for p in all_pubs if p['username'] == f_uname]
-            
-            if friend_pubs:
-                for item in friend_pubs:
-                    increment_public_views(item['username'], item['date'], item['type'], current_user)
-                    with st.container():
-                        p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
-                        header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
-                        st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views']}</small>", unsafe_allow_html=True)
-                        if item['content']:
-                            st.markdown(f"""
-                                <div style="background-color: {theme_cfg['paper_bg']}; color: {theme_cfg['paper_text']}; border: 1px solid {theme_cfg['card_border']}; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{item['content']}</div>
-                            """, unsafe_allow_html=True)
-                        if item['drawing']:
-                            st.image(item['drawing'], caption=f"{f_nick}님의 그림일기 🎨", use_column_width=True)
-                        st.markdown("---")
-            else:
-                st.info(f"'{f_nick}'님이 작성한 공개 일기가 없습니다.")
-        
-        with tab_f2:
-            my_rooms = get_user_exchange_rooms(current_user)
-            friend_rooms = get_user_exchange_rooms(f_uname)
-            common_rooms = [r for r in my_rooms if r['exchange_id'] in [fr['exchange_id'] for fr in friend_rooms]]
-            
-            if common_rooms:
-                for cr in common_rooms:
-                    st.subheader(f"📖 교환일기 방: {cr['title']}")
-                    ex_diaries = get_exchange_diaries(cr['exchange_id'])
-                    if ex_diaries:
-                        for d_str, d_list in sorted(ex_diaries.items(), reverse=True):
-                            st.markdown(f"📅 **{d_str}**")
-                            for ed in d_list:
-                                st.markdown(f"**{ed['nickname']}** ({ed['emotion']}):")
-                                if ed['content']:
-                                    st.markdown(f"""
-                                        <div style="background-color: {theme_cfg['paper_bg']}; color: {theme_cfg['paper_text']}; border: 1px solid {theme_cfg['card_border']}; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{ed['content']}</div>
-                                    """, unsafe_allow_html=True)
-                                if ed['drawing']:
-                                    st.image(ed['drawing'], caption=f"{ed['nickname']}님의 그림 🎨", use_column_width=True)
-                            st.markdown("---")
-                    else:
-                        st.info("작성된 교환일기가 없습니다.")
-            else:
-                st.info(f"'{f_nick}'님과 함께 참여 중인 교환일기 방이 없습니다.")
+        if friend_pubs:
+            for item in friend_pubs:
+                increment_public_views(item['username'], item['date'], current_user)
+                with st.container():
+                    p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
+                    header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
+                    st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views']}</small>", unsafe_allow_html=True)
+                    if item['content']:
+                        st.markdown(f"""
+                            <div style="background-color: {theme_cfg['paper_bg']}; color: {theme_cfg['paper_text']}; border: 1px solid {theme_cfg['card_border']}; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{item['content']}</div>
+                        """, unsafe_allow_html=True)
+                    if item['drawing']:
+                        st.image(item['drawing'], caption=f"{f_nick}님의 그림일기 🎨", use_column_width=True)
+                    st.markdown("---")
+        else:
+            st.info(f"'{f_nick}'님이 작성한 공개 일기가 없습니다.")
 
         if st.button("🗓️ 내 비밀일기로 돌아가기", use_container_width=True):
             st.session_state.viewing_friend = None
@@ -1799,7 +1439,7 @@ else:
             st.rerun()
 
     # =========================================================
-    # PAGE 5: 스케치 레이아웃 기반 일기 작성 에디터
+    # PAGE 4: 일기 작성 에디터
     # =========================================================
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
@@ -1809,7 +1449,6 @@ else:
         has_ex = s_date in diaries and (bool(diaries[s_date].get("content", "").strip()) or bool(diaries[s_date].get("drawing", "")))
         ex_data = diaries.get(s_date, {})
 
-        # 스케치 레이아웃 상단: 타이틀 + 동그라미 스티커/색상 버튼
         col_title, col_stk, col_clr = st.columns([6, 1, 1])
         with col_title:
             st.markdown(f"# {app_title.split()[0]} DIARY")
@@ -1857,7 +1496,6 @@ else:
                         st.toast(f"'{stk}' 스티커가 추가되었습니다!", icon="✨")
             st.markdown("---")
 
-        # 스케치 날짜 및 감정 선택
         col_date, col_emo = st.columns([1, 1])
         with col_date:
             st.markdown(f"### ✏️ 날짜: **{s_date}**")
@@ -1866,10 +1504,8 @@ else:
             sel_emo = st.selectbox("오늘의 감정:", STANDARD_EMOTIONS, index=idx, label_visibility="collapsed")
             sel_emoji = sel_emo.split()[0]
 
-        # 제목 입력
         diary_title = st.text_input("제목:", placeholder="제목을 입력하세요...", key=f"title_{s_date}")
 
-        # 본문 줄노트 에디터
         content_val = ex_data.get("content", "")
         note_editor_html = f"""
         <!DOCTYPE html>
@@ -1918,7 +1554,6 @@ else:
         components.html(note_editor_html, height=340)
         txt = content_input_val
 
-        # 오늘의 질문 섹션
         st.markdown("---")
         daily_q = get_daily_question(s_date)
         saved_q_answer = get_daily_answer(current_user, s_date)
@@ -1926,7 +1561,6 @@ else:
         st.write(f"**{daily_q}**")
         daily_ans_input = st.text_area("답변 작성:", value=saved_q_answer, height=80, placeholder="답변을 입력하세요...", label_visibility="collapsed")
 
-        # 공개 범위 설정 섹션
         st.markdown("---")
         st.markdown("### 🔒 공개범위 설정")
         friends = get_user_friends(current_user)
@@ -1951,7 +1585,6 @@ else:
             else:
                 st.info("등록된 친구가 없습니다.")
 
-        # 저장 및 하단 버튼
         st.markdown("---")
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
@@ -1979,154 +1612,4 @@ else:
                 delete_diary(current_user, s_date)
                 st.success("일기가 삭제되었습니다.")
                 st.session_state.page = "public_calendar" if is_pub else "secret_calendar"
-                st.rerun()
-
-    # PAGE 6: 교환일기 에디터
-    elif st.session_state.page == "exchange_editor":
-        s_date = st.session_state.selected_date
-        eid = st.session_state.current_exchange_id
-        room_info = get_exchange_room_info(eid)
-        
-        col_title, col_stk, col_clr = st.columns([6, 1, 1])
-        with col_title:
-            st.markdown(f"# 💌 [{room_info['title']}] EX-DIARY")
-        with col_stk:
-            st.markdown('<div class="circle-icon-btn">', unsafe_allow_html=True)
-            if st.button("🏷️", key="btn_circle_stk_ex"):
-                if "show_ex_sticker_box" not in st.session_state:
-                    st.session_state.show_ex_sticker_box = True
-                else:
-                    st.session_state.show_ex_sticker_box = not st.session_state.show_ex_sticker_box
-                st.rerun()
-            st.caption("스티커")
-            st.markdown('</div>', unsafe_allow_html=True)
-        with col_clr:
-            st.markdown('<div class="circle-icon-btn">', unsafe_allow_html=True)
-            if st.button("🎨", key="btn_circle_clr_ex"):
-                if "show_color_picker" not in st.session_state:
-                    st.session_state.show_color_picker = True
-                else:
-                    st.session_state.show_color_picker = not st.session_state.show_color_picker
-                st.rerun()
-            st.caption("색상")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        if st.session_state.get("show_color_picker", False):
-            new_bg = st.color_picker("전체 배경 색상 선택", value=st.session_state.page_custom_bg, key="picker_ex_bg_color")
-            if new_bg != st.session_state.page_custom_bg:
-                st.session_state.page_custom_bg = new_bg
-                st.rerun()
-
-        if st.session_state.get("show_ex_sticker_box", False):
-            st.markdown("### ✨ 스티커 선택")
-            STICKER_CATEGORIES = {
-                "🎀 마스킹 테이프": ["🏷️ 핑크 체크 마테", "🏷️ 옐로우 도트 마테", "🏷️ 블루 스트라이프 마테", "🏷️ 보라하트 마테"],
-                "🖍️ 형광펜 밑줄 & 박스": ["🖍️ 핑크 형광펜 밑줄", "🖍️ 노랑 형광펜 밑줄", "🖍️ 연두 형광펜 밑줄", "🖍️ 하늘색 형광펜 밑줄"],
-                "⭕ 색연필 도형": ["⭕ 빨간 동그라미", "🟦 파란 네모", "⭐ 노란 별 도형", "📍 핑크 하트 도형"],
-                "💖 감성 모양 스티커": ["💖 반짝이 하트", "🌸 벚꽃잎", "🍀 네잎클로버", "🌙 초승달", "🧸 곰돌이 인형"]
-            }
-            selected_ex_stk_cat = st.selectbox("스티커 테마 범주 선택", list(STICKER_CATEGORIES.keys()), key="ex_stk_cat")
-            ex_stk_cols = st.columns(4)
-            for idx, stk in enumerate(STICKER_CATEGORIES[selected_ex_stk_cat]):
-                col_idx = idx % 4
-                with ex_stk_cols[col_idx]:
-                    if st.button(stk, key=f"ex_stk_{stk}", use_container_width=True):
-                        st.toast(f"'{stk}' 스티커가 추가되었습니다!", icon="✨")
-            st.markdown("---")
-
-        e_diaries = get_exchange_diaries(eid).get(s_date, [])
-        my_e_diary = next((d for d in e_diaries if d['username'] == current_user), None)
-        other_e_diaries = [d for d in e_diaries if d['username'] != current_user]
-
-        if other_e_diaries:
-            st.subheader("💌 다른 멤버들의 일기")
-            for od in other_e_diaries:
-                p_vis = "🔒 둘만 보기" if od.get("is_public", 0) == 0 else "🌐 모두에게 공개"
-                st.markdown(f"**{od['nickname']}**님의 기록 ({od['emotion']}) - *{p_vis}*")
-                if od['content']:
-                    st.markdown(f"""
-                        <div style="background-color: transparent; color: {theme_cfg['paper_text']}; border-bottom: 1px dashed {theme_cfg['card_border']}; padding: 12px; margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{od['content']}</div>
-                    """, unsafe_allow_html=True)
-                st.markdown("---")
-
-        col_date, col_emo = st.columns([1, 1])
-        with col_date:
-            st.markdown(f"### ✏️ 날짜: **{s_date}**")
-        with col_emo:
-            idx = EMOJI_LIST.index(my_e_diary['emotion']) if my_e_diary and my_e_diary['emotion'] in EMOJI_LIST else 0
-            sel_emo = st.selectbox("오늘 멤버들에게 전할 감정 선택:", STANDARD_EMOTIONS, index=idx, label_visibility="collapsed")
-            sel_emoji = sel_emo.split()[0]
-
-        my_ex_content_val = my_e_diary['content'] if my_e_diary else ""
-
-        ex_note_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    background-color: transparent;
-                    margin: 0;
-                    padding: 0;
-                    font-family: {theme_cfg['font_family']};
-                }}
-                textarea {{
-                    width: 100%;
-                    height: 320px;
-                    background-color: transparent !important;
-                    background-image: linear-gradient({theme_cfg['paper_line']} 1px, transparent 1px) !important;
-                    background-size: 100% 32px !important;
-                    border: none !important;
-                    outline: none !important;
-                    color: {theme_cfg['text']} !important;
-                    font-family: {theme_cfg['font_family']} !important;
-                    font-size: 1.2rem !important;
-                    line-height: 32px !important;
-                    padding-top: 4px !important;
-                    resize: vertical;
-                }}
-            </style>
-        </head>
-        <body>
-            <textarea id="exTextarea" placeholder="멤버들에게 전할 이야기를 적어보세요...">{my_ex_content_val}</textarea>
-            <script>
-                const exTextarea = document.getElementById('exTextarea');
-                exTextarea.addEventListener('input', function() {{
-                    const parentInput = window.parent.document.querySelector('input[aria-label="hidden_ex_content_input"]');
-                    if (parentInput) {{
-                        parentInput.value = exTextarea.value;
-                        parentInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    }}
-                }});
-            </script>
-        </body>
-        </html>
-        """
-        ex_content_input_val = st.text_input("hidden_ex_content_input", value=my_ex_content_val, label_visibility="collapsed", key=f"ex_content_hidden_{s_date}")
-        components.html(ex_note_html, height=340)
-        txt = ex_content_input_val
-
-        st.markdown("---")
-        curr_pub_idx = 1 if (my_e_diary and my_e_diary.get("is_public", 0) == 1) else 0
-        ex_public_choice = st.radio(
-            "공개범위 선택:",
-            ["🔒 교환일기 멤버끼리만 보기", "🌐 모두에게 공개 (공개일기 모아보기 포함)"],
-            index=curr_pub_idx,
-            horizontal=True
-        )
-        is_ex_public = (ex_public_choice == "🌐 모두에게 공개 (공개일기 모아보기 포함)")
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("💌 교환일기 저장", use_container_width=True):
-                if txt.strip():
-                    save_exchange_diary(eid, s_date, current_user, current_nickname, sel_emoji, txt.strip(), "", is_ex_public)
-                    st.success("교환일기가 성공적으로 저장되었습니다!")
-                    st.session_state.page = "exchange_calendar"
-                    st.rerun()
-                else:
-                    st.warning("내용을 입력해 주세요.")
-        with col2:
-            if st.button("🗓️ 교환 달력으로 돌아가기", use_container_width=True):
-                st.session_state.page = "exchange_calendar"
                 st.rerun()
