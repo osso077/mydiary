@@ -90,9 +90,6 @@ DAILY_QUESTIONS = [
 def get_connection():
     return sqlite3.connect(DB_FILE, check_same_thread=False)
 
-def generate_invite_code():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
 def get_daily_question(date_str):
     try:
         dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
@@ -115,8 +112,7 @@ def init_db():
             status_message TEXT DEFAULT '',
             theme TEXT DEFAULT '포근함',
             main_color TEXT DEFAULT '#DDA15E',
-            sub_color TEXT DEFAULT '#BC6C25',
-            invite_code TEXT UNIQUE
+            sub_color TEXT DEFAULT '#BC6C25'
         )
     ''')
     
@@ -128,7 +124,6 @@ def init_db():
             content TEXT,
             drawing TEXT DEFAULT '',
             is_public INTEGER DEFAULT 0,
-            allow_friends TEXT DEFAULT '',
             views INTEGER DEFAULT 0,
             PRIMARY KEY (username, date),
             FOREIGN KEY (username) REFERENCES users(username)
@@ -180,29 +175,6 @@ def init_db():
         )
     ''')
 
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS friendships (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            friend_username TEXT,
-            friend_nickname TEXT,
-            friend_icon TEXT DEFAULT '🧸',
-            friend_status TEXT DEFAULT '',
-            FOREIGN KEY (username) REFERENCES users(username)
-        )
-    ''')
-
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS friend_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender_username TEXT,
-            receiver_username TEXT,
-            status TEXT DEFAULT 'pending',
-            FOREIGN KEY (sender_username) REFERENCES users(username),
-            FOREIGN KEY (receiver_username) REFERENCES users(username)
-        )
-    ''')
-
     cols = [
         ("users", "nickname TEXT DEFAULT ''"),
         ("users", "birthdate TEXT DEFAULT ''"),
@@ -211,14 +183,9 @@ def init_db():
         ("users", "theme TEXT DEFAULT '포근함'"),
         ("users", "main_color TEXT DEFAULT '#DDA15E'"),
         ("users", "sub_color TEXT DEFAULT '#BC6C25'"),
-        ("users", "invite_code TEXT DEFAULT ''"),
         ("diaries", "drawing TEXT DEFAULT ''"),
         ("diaries", "is_public INTEGER DEFAULT 0"),
-        ("diaries", "allow_friends TEXT DEFAULT ''"),
-        ("diaries", "views INTEGER DEFAULT 0"),
-        ("friendships", "friend_nickname TEXT DEFAULT ''"),
-        ("friendships", "friend_icon TEXT DEFAULT '🧸'"),
-        ("friendships", "friend_status TEXT DEFAULT ''")
+        ("diaries", "views INTEGER DEFAULT 0")
     ]
     for tbl, col in cols:
         try:
@@ -236,12 +203,11 @@ def register_user(username, password, nickname, birthdate=""):
     conn = get_connection()
     c = conn.cursor()
     hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    code = generate_invite_code()
     try:
         c.execute('''
-            INSERT INTO users (username, password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color, invite_code) 
-            VALUES (?, ?, ?, ?, '🧸', '', '포근함', '#DDA15E', '#BC6C25', ?)
-        ''', (username, hashed_pw, nickname, birthdate, code))
+            INSERT INTO users (username, password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color) 
+            VALUES (?, ?, ?, ?, '🧸', '', '포근함', '#DDA15E', '#BC6C25')
+        ''', (username, hashed_pw, nickname, birthdate))
         conn.commit()
         push_db_to_github("New user registered")
         return True
@@ -253,15 +219,14 @@ def register_user(username, password, nickname, birthdate=""):
 def login_user(username, password):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color, invite_code FROM users WHERE username = ?", (username,))
+    c.execute("SELECT password, nickname, birthdate, profile_icon, status_message, theme, main_color, sub_color FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
         stored_pw = row[0]
         if bcrypt.checkpw(password.encode('utf-8'), stored_pw.encode('utf-8')):
-            inv_code = row[8] if row[8] else generate_invite_code()
-            return True, row[1], row[2], (row[3] or '🧸'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25'), inv_code
-    return False, None, None, '🧸', '', '포근함', '#DDA15E', '#BC6C25', ''
+            return True, row[1], row[2], (row[3] or '🧸'), (row[4] or ''), (row[5] or '포근함'), (row[6] or '#DDA15E'), (row[7] or '#BC6C25')
+    return False, None, None, '🧸', '', '포근함', '#DDA15E', '#BC6C25'
 
 def update_user_info(username, new_nickname, new_birthdate, new_profile_icon, new_status_message):
     conn = get_connection()
@@ -271,13 +236,6 @@ def update_user_info(username, new_nickname, new_birthdate, new_profile_icon, ne
         SET nickname = ?, birthdate = ?, profile_icon = ?, status_message = ? 
         WHERE username = ?
     ''', (new_nickname, new_birthdate, new_profile_icon, new_status_message, username))
-    
-    c.execute('''
-        UPDATE friendships 
-        SET friend_nickname = ?, friend_icon = ?, friend_status = ? 
-        WHERE friend_username = ?
-    ''', (new_nickname, new_profile_icon, new_status_message, username))
-    
     conn.commit()
     conn.close()
     push_db_to_github(f"Update info for user {username}")
@@ -303,8 +261,6 @@ def delete_user_account(username):
         c.execute("DELETE FROM comments WHERE comment_username = ? OR diary_username = ?", (username, username))
         c.execute("DELETE FROM schedules WHERE username = ?", (username,))
         c.execute("DELETE FROM user_ddays WHERE username = ?", (username,))
-        c.execute("DELETE FROM friendships WHERE username = ? OR friend_username = ?", (username, username))
-        c.execute("DELETE FROM friend_requests WHERE sender_username = ? OR receiver_username = ?", (username, username))
         c.execute("DELETE FROM users WHERE username = ?", (username,))
         conn.commit()
         push_db_to_github(f"User account deleted: {username}")
@@ -314,104 +270,6 @@ def delete_user_account(username):
         return False
     finally:
         conn.close()
-
-def send_friend_request(my_username, friend_code):
-    conn = get_connection()
-    c = conn.cursor()
-    cleaned_code = friend_code.strip().upper()
-    c.execute("SELECT username, nickname FROM users WHERE UPPER(invite_code) = ?", (cleaned_code,))
-    friend = c.fetchone()
-    
-    if not friend:
-        conn.close()
-        return False, "존재하지 않는 초대코드입니다."
-    
-    f_username, f_nickname = friend[0], friend[1]
-    if f_username == my_username:
-        conn.close()
-        return False, "자신의 초대코드는 입력할 수 없습니다."
-
-    c.execute("SELECT id FROM friendships WHERE username = ? AND friend_username = ?", (my_username, f_username))
-    if c.fetchone():
-        conn.close()
-        return False, "이미 친구로 등록된 사용자입니다."
-
-    c.execute("SELECT id FROM friend_requests WHERE sender_username = ? AND receiver_username = ? AND status = 'pending'", (my_username, f_username))
-    if c.fetchone():
-        conn.close()
-        return False, "이미 친구 요청을 보냈습니다."
-
-    c.execute("INSERT INTO friend_requests (sender_username, receiver_username, status) VALUES (?, ?, 'pending')", (my_username, f_username))
-    conn.commit()
-    conn.close()
-    push_db_to_github("Friend request sent")
-    return True, f"'{f_nickname}'님에게 친구 요청을 보냈습니다!"
-
-def get_pending_friend_requests(username):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT fr.id, u.username, u.nickname, u.profile_icon, u.status_message 
-        FROM friend_requests fr 
-        JOIN users u ON fr.sender_username = u.username 
-        WHERE fr.receiver_username = ? AND fr.status = 'pending'
-    ''', (username,))
-    rows = c.fetchall()
-    conn.close()
-    return [{"id": r[0], "sender_username": r[1], "sender_nickname": r[2], "sender_icon": r[3] or '🧸', "sender_status": r[4] or ''} for r in rows]
-
-def accept_friend_request(request_id, my_username):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT sender_username FROM friend_requests WHERE id = ? AND receiver_username = ?", (request_id, my_username))
-    req = c.fetchone()
-    if not req:
-        conn.close()
-        return
-    
-    sender_username = req[0]
-    c.execute("UPDATE friend_requests SET status = 'accepted' WHERE id = ?", (request_id,))
-
-    c.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (sender_username,))
-    s_info = c.fetchone()
-    s_nick, s_icon, s_status = s_info[0], s_info[1] or '🧸', s_info[2] or ''
-
-    c.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (my_username,))
-    my_info = c.fetchone()
-    my_nick, my_icon, my_status = my_info[0], my_info[1] or '🧸', my_info[2] or ''
-
-    c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
-              (my_username, sender_username, s_nick, s_icon, s_status))
-    c.execute("INSERT INTO friendships (username, friend_username, friend_nickname, friend_icon, friend_status) VALUES (?, ?, ?, ?, ?)",
-              (sender_username, my_username, my_nick, my_icon, my_status))
-
-    conn.commit()
-    conn.close()
-    push_db_to_github("Friend request accepted")
-
-def reject_friend_request(request_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM friend_requests WHERE id = ?", (request_id,))
-    conn.commit()
-    conn.close()
-    push_db_to_github("Friend request rejected")
-
-def get_user_friends(username):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT id, friend_username, friend_nickname, friend_icon, friend_status FROM friendships WHERE username = ?", (username,))
-    rows = c.fetchall()
-    conn.close()
-    return [{"id": r[0], "friend_username": r[1], "friend_nickname": r[2], "friend_icon": r[3], "friend_status": r[4]} for r in rows]
-
-def delete_friend(friendship_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM friendships WHERE id = ?", (friendship_id,))
-    conn.commit()
-    conn.close()
-    push_db_to_github("Friend deleted")
 
 def get_user_ddays(username):
     conn = get_connection()
@@ -440,42 +298,41 @@ def delete_user_dday(dday_id):
 def get_user_diaries(username, is_public_flag):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT date, emotion, content, drawing, is_public, allow_friends FROM diaries WHERE username = ?", (username,))
+    c.execute("SELECT date, emotion, content, drawing, is_public FROM diaries WHERE username = ?", (username,))
     rows = c.fetchall()
     conn.close()
     
     diaries = {}
     for r in rows:
-        dt, em, ct, dr, ip, af = r[0], r[1], r[2], r[3], r[4], r[5]
+        dt, em, ct, dr, ip = r[0], r[1], r[2], r[3], r[4]
         if is_public_flag:
-            if ip == 1 or (af and len(af.strip()) > 0):
-                diaries[dt] = {"emotion": em, "content": ct, "drawing": dr, "is_public": ip, "allow_friends": af}
+            if ip == 1:
+                diaries[dt] = {"emotion": em, "content": ct, "drawing": dr, "is_public": ip}
         else:
-            if ip == 0 and (not af or len(af.strip()) == 0):
-                diaries[dt] = {"emotion": em, "content": ct, "drawing": dr, "is_public": ip, "allow_friends": af}
+            if ip == 0:
+                diaries[dt] = {"emotion": em, "content": ct, "drawing": dr, "is_public": ip}
     return diaries
 
 def get_all_public_diaries(current_user):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT d.date, d.emotion, d.content, d.drawing, u.nickname, d.username, d.views, 'individual' AS type, u.profile_icon, d.is_public, d.allow_friends
+        SELECT d.date, d.emotion, d.content, d.drawing, u.nickname, d.username, d.views, u.profile_icon, d.is_public
         FROM diaries d
         JOIN users u ON d.username = u.username
-        WHERE d.is_public = 1 OR d.allow_friends LIKE ?
+        WHERE d.is_public = 1
         ORDER BY date DESC
-    ''', (f"%{current_user}%",))
+    ''')
     rows = c.fetchall()
     conn.close()
     
     public_list = []
     for r in rows:
-        is_pub = r[9]
-        allow_str = r[10] if r[10] else ""
-        if is_pub == 1 or current_user == r[5] or current_user in [x.strip() for x in allow_str.split(",") if x.strip()]:
+        is_pub = r[8]
+        if is_pub == 1:
             public_list.append({
                 "date": r[0], "emotion": r[1], "content": r[2], "drawing": r[3],
-                "nickname": r[4], "username": r[5], "views": r[6], "type": r[7], "profile_icon": r[8] if r[8] else '🧸'
+                "nickname": r[4], "username": r[5], "views": r[6], "profile_icon": r[7] if r[7] else '🧸'
             })
     return public_list
 
@@ -488,15 +345,15 @@ def increment_public_views(username, date_str, current_user):
     conn.commit()
     conn.close()
 
-def save_diary(username, date_str, emotion, content, drawing, is_public, allow_friends):
+def save_diary(username, date_str, emotion, content, drawing, is_public):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO diaries (username, date, emotion, content, drawing, is_public, allow_friends)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO diaries (username, date, emotion, content, drawing, is_public)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(username, date) DO UPDATE SET
-            emotion=excluded.emotion, content=excluded.content, drawing=excluded.drawing, is_public=excluded.is_public, allow_friends=excluded.allow_friends
-    ''', (username, date_str, emotion, content, drawing, 1 if is_public else 0, allow_friends))
+            emotion=excluded.emotion, content=excluded.content, drawing=excluded.drawing, is_public=excluded.is_public
+    ''', (username, date_str, emotion, content, drawing, 1 if is_public else 0))
     conn.commit()
     conn.close()
     push_db_to_github(f"Update diary entry for {date_str}")
@@ -630,10 +487,6 @@ if "main_color" not in st.session_state:
     st.session_state.main_color = "#DDA15E"
 if "sub_color" not in st.session_state:
     st.session_state.sub_color = "#BC6C25"
-if "invite_code" not in st.session_state:
-    st.session_state.invite_code = ""
-if "viewing_friend" not in st.session_state:
-    st.session_state.viewing_friend = None
 if "page" not in st.session_state:
     st.session_state.page = "secret_calendar"
 if "selected_date" not in st.session_state:
@@ -741,7 +594,6 @@ THEME_STYLES = {
     }
 }
 
-# 세션 테마 안전 검증
 current_theme_key = st.session_state.get("theme", "포근함")
 if current_theme_key not in THEME_STYLES:
     current_theme_key = "포근함"
@@ -757,14 +609,10 @@ if "page_custom_bg" not in st.session_state:
 is_editor_page = st.session_state.get("page", "") in ["secret_editor", "public_editor"]
 active_bg_color = st.session_state.page_custom_bg if is_editor_page else theme_cfg['bg']
 
-# ---------------------------------------------------------
-# 💡 렌더링 시작 전 전역 CSS 강제 고정 (다크모드/깜빡임 차단)
-# ---------------------------------------------------------
 st.markdown(f"""
     <style>
     @import url('{theme_cfg['font_import']}');
 
-    /* 스트림릿 전체 기본 배경 및 글자색 강제 고정 */
     html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .stApp, .main, [data-testid="stVerticalBlock"] {{
         background-color: {active_bg_color} !important;
         color: {theme_cfg['text']} !important;
@@ -852,7 +700,7 @@ if st.session_state.user is None:
     if auth_mode == "로그인":
         if st.button("로그인하기", use_container_width=True):
             if username_input and password_input:
-                is_success, nickname, birthdate, profile_icon, status_message, theme, m_color, s_color, inv_code = login_user(username_input, password_input)
+                is_success, nickname, birthdate, profile_icon, status_message, theme, m_color, s_color = login_user(username_input, password_input)
                 if is_success:
                     st.session_state.user = username_input
                     st.session_state.nickname = nickname if nickname else username_input
@@ -862,7 +710,6 @@ if st.session_state.user is None:
                     st.session_state.theme = theme
                     st.session_state.main_color = m_color
                     st.session_state.sub_color = s_color
-                    st.session_state.invite_code = inv_code
 
                     st.session_state.page = "secret_calendar"
                     st.success(f"{st.session_state.nickname}님 환영합니다!")
@@ -914,7 +761,6 @@ else:
     st.sidebar.markdown(f"### {current_profile_icon} **{current_nickname}** 님")
     if current_status_message:
         st.sidebar.caption(f"💬 *{current_status_message}*")
-    st.sidebar.info(f"내 초대코드: **{st.session_state.invite_code}**")
 
     # =========================================================
     # 사이드바 메뉴 구성
@@ -1001,7 +847,6 @@ else:
                 if delete_user_account(current_user):
                     st.session_state.user = None
                     st.session_state.nickname = None
-                    st.session_state.viewing_friend = None
                     st.session_state.page = "secret_calendar"
                     st.success("계정이 성공적으로 삭제되었습니다.")
                     st.rerun()
@@ -1055,91 +900,19 @@ else:
             else:
                 st.warning("디데이 제목을 입력해 주세요.")
 
-    # 3. 친구기능
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 👥 친구기능")
-    with st.sidebar.expander("👥 친구 관리"):
-        friend_code_input = st.text_input("친구 초대코드 입력")
-        if st.button("친구 요청 보내기", use_container_width=True):
-            if friend_code_input.strip():
-                ok, msg = send_friend_request(current_user, friend_code_input.strip().upper())
-                if ok:
-                    st.success(msg)
-                else:
-                    st.error(msg)
-            else:
-                st.warning("초대코드를 입력해 주세요.")
-
-        pending_reqs = get_pending_friend_requests(current_user)
-        if pending_reqs:
-            st.markdown("---")
-            st.markdown("📬 **받은 친구 요청**")
-            for req in pending_reqs:
-                st.write(f"{req['sender_icon']} **{req['sender_nickname']}**")
-                rc1, rc2 = st.columns(2)
-                with rc1:
-                    if st.button("✔️ 승인", key=f"accept_req_{req['id']}"):
-                        accept_friend_request(req['id'], current_user)
-                        st.success(f"'{req['sender_nickname']}'님과 친구가 되었습니다!")
-                        st.rerun()
-                with rc2:
-                    if st.button("❌ 거절", key=f"reject_req_{req['id']}"):
-                        reject_friend_request(req['id'])
-                        st.rerun()
-        
-        st.markdown("---")
-        st.markdown("📋 **내 친구 목록** *(클릭하여 일기 구경)*")
-        friends = get_user_friends(current_user)
-        if friends:
-            for f in friends:
-                conn = get_connection()
-                c_f = conn.cursor()
-                c_f.execute("SELECT nickname, profile_icon, status_message FROM users WHERE username = ?", (f['friend_username'],))
-                f_row = c_f.fetchone()
-                conn.close()
-                
-                f_nick = f_row[0] if f_row else f['friend_nickname']
-                f_icon = f_row[1] if (f_row and f_row[1]) else (f['friend_icon'] or '🧸')
-                f_stat = f_row[2] if f_row else f['friend_status']
-
-                if st.button(f"{f_icon} {f_nick}", key=f"btn_view_friend_{f['friend_username']}", use_container_width=True):
-                    st.session_state.viewing_friend = {
-                        "username": f['friend_username'],
-                        "nickname": f_nick,
-                        "icon": f_icon
-                    }
-                    st.session_state.page = "friend_diary_view"
-                    st.rerun()
-
-                if f_stat:
-                    st.caption(f"💬 {f_stat}")
-
-                if st.button("🗑️ 친구 삭제", key=f"del_f_{f['id']}"):
-                    delete_friend(f['id'])
-                    if st.session_state.viewing_friend and st.session_state.viewing_friend['username'] == f['friend_username']:
-                        st.session_state.viewing_friend = None
-                        st.session_state.page = "secret_calendar"
-                    st.rerun()
-                st.markdown("---")
-        else:
-            st.caption("등록된 친구가 없습니다.")
-
-    # 4. 일기 메뉴
+    # 3. 일기 메뉴
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📖 일기")
     menu_options = ["🔒 비밀일기", "📅 일정 관리 달력", "🌐 공개일기"]
     nav_choice = st.sidebar.radio("일기 메뉴", menu_options, label_visibility="collapsed")
 
     if nav_choice == "🔒 비밀일기" and st.session_state.page not in ["secret_calendar", "secret_editor"]:
-        st.session_state.viewing_friend = None
         st.session_state.page = "secret_calendar"
         st.rerun()
     elif nav_choice == "📅 일정 관리 달력" and st.session_state.page not in ["schedule_calendar", "schedule_editor"]:
-        st.session_state.viewing_friend = None
         st.session_state.page = "schedule_calendar"
         st.rerun()
     elif nav_choice == "🌐 공개일기" and st.session_state.page not in ["public_calendar", "public_editor"]:
-        st.session_state.viewing_friend = None
         st.session_state.page = "public_calendar"
         st.rerun()
 
@@ -1147,7 +920,6 @@ else:
     if st.sidebar.button("🔒 로그아웃", use_container_width=True):
         st.session_state.user = None
         st.session_state.nickname = None
-        st.session_state.viewing_friend = None
         st.session_state.page = "secret_calendar"
         st.rerun()
 
@@ -1337,46 +1109,6 @@ else:
             else:
                 st.write("🌿 아직 등록된 공개 일기가 없어요.")
 
-    # PAGE 3-1: 👥 친구 일기 구경하기 기능
-    elif st.session_state.page == "friend_diary_view":
-        st.title(app_title)
-        f_info = st.session_state.viewing_friend
-        if not f_info:
-            st.session_state.page = "secret_calendar"
-            st.rerun()
-
-        f_uname = f_info['username']
-        f_nick = f_info['nickname']
-        f_icon = f_info['icon']
-
-        st.header(f"👥 친구 일기 구경하기")
-        st.markdown(f"### ✨ {f_icon} **{f_nick}** 님의 일기장")
-        
-        all_pubs = get_all_public_diaries(current_user)
-        friend_pubs = [p for p in all_pubs if p['username'] == f_uname]
-        
-        if friend_pubs:
-            for item in friend_pubs:
-                increment_public_views(item['username'], item['date'], current_user)
-                with st.container():
-                    p_icon = item['profile_icon'] if item['profile_icon'] else '🧸'
-                    header_title = f"{p_icon} {item['emotion']} **{item['nickname']}** 님의 이야기 ({item['date']})"
-                    st.markdown(f"#### {header_title}  \n<small>👁️ 조회수 {item['views']}</small>", unsafe_allow_html=True)
-                    if item['content']:
-                        st.markdown(f"""
-                            <div style="background-color: {theme_cfg['paper_bg']}; color: {theme_cfg['paper_text']}; border: 1px solid {theme_cfg['card_border']}; border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 12px; white-space: pre-wrap; font-family: {theme_cfg['font_family']};">{item['content']}</div>
-                        """, unsafe_allow_html=True)
-                    if item['drawing']:
-                        st.image(item['drawing'], caption=f"{f_nick}님의 그림일기 🎨", use_column_width=True)
-                    st.markdown("---")
-        else:
-            st.info(f"'{f_nick}'님이 작성한 공개 일기가 없습니다.")
-
-        if st.button("🗓️ 내 비밀일기로 돌아가기", use_container_width=True):
-            st.session_state.viewing_friend = None
-            st.session_state.page = "secret_calendar"
-            st.rerun()
-
     # =========================================================
     # PAGE 4: 일기 작성 에디터
     # =========================================================
@@ -1475,27 +1207,12 @@ else:
 
         st.markdown("---")
         st.markdown("### 🔒 공개범위 설정")
-        friends = get_user_friends(current_user)
-        existing_allow = ex_data.get("allow_friends", "") if "allow_friends" in ex_data else ""
-        existing_allow_list = [x.strip() for x in existing_allow.split(",") if x.strip()]
-
         pub_mode = st.radio(
             "공개 대상을 선택하세요:",
-            ["🔒 나만 보기", "👥 선택한 친구에게만 공개", "🌐 전체 공개"],
-            index=2 if is_pub else (1 if existing_allow_list else 0),
+            ["🔒 나만 보기", "🌐 전체 공개"],
+            index=1 if is_pub else 0,
             label_visibility="collapsed"
         )
-
-        selected_allow_friends = []
-        if pub_mode == "👥 선택한 친구에게만 공개":
-            if friends:
-                st.write("일기를 공유할 친구를 선택해 주세요:")
-                for f in friends:
-                    is_checked = f['friend_username'] in existing_allow_list
-                    if st.checkbox(f"{f['friend_icon']} {f['friend_nickname']}", value=is_checked, key=f"chk_friend_{f['friend_username']} {s_date}"):
-                        selected_allow_friends.append(f['friend_username'])
-            else:
-                st.info("등록된 친구가 없습니다.")
 
         st.markdown("---")
         col1, col2, col3 = st.columns([2, 2, 1])
@@ -1503,15 +1220,14 @@ else:
             if st.button("💾 일기 저장", use_container_width=True):
                 if txt is not None:
                     final_is_pub = 1 if pub_mode == "🌐 전체 공개" else 0
-                    final_allow_str = ",".join(selected_allow_friends) if pub_mode == "👥 선택한 친구에게만 공개" else ""
                     
-                    save_diary(current_user, s_date, sel_emoji, txt, "", final_is_pub, final_allow_str)
+                    save_diary(current_user, s_date, sel_emoji, txt, "", final_is_pub)
                     
                     if daily_ans_input and daily_ans_input.strip():
                         save_daily_answer(current_user, s_date, daily_q, daily_ans_input.strip())
                     
                     st.success("일기가 성공적으로 저장되었습니다!")
-                    st.session_state.page = "public_calendar" if final_is_pub or final_allow_str else "secret_calendar"
+                    st.session_state.page = "public_calendar" if final_is_pub else "secret_calendar"
                     st.rerun()
                 else:
                     st.warning("내용을 입력해 주세요.")
