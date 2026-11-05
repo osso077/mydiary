@@ -1378,7 +1378,7 @@ else:
             st.rerun()
 
     # =========================================================
-    # PAGE 4: 일기 작성 에디터
+    # PAGE 4: 일기 작성 에디터 (스티커 기능 완전 삭제됨)
     # =========================================================
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
@@ -1388,19 +1388,9 @@ else:
         has_ex = s_date in diaries and (bool(diaries[s_date].get("content", "").strip()) or bool(diaries[s_date].get("drawing", "")))
         ex_data = diaries.get(s_date, {})
 
-        col_title, col_stk, col_clr = st.columns([6, 1, 1])
+        col_title, col_clr = st.columns([7, 1])
         with col_title:
             st.markdown(f"# {app_title.split()[0]} DIARY")
-        with col_stk:
-            st.markdown('<div class="circle-icon-btn">', unsafe_allow_html=True)
-            if st.button("🏷️", key="btn_circle_stk"):
-                if "show_sticker_box" not in st.session_state:
-                    st.session_state.show_sticker_box = True
-                else:
-                    st.session_state.show_sticker_box = not st.session_state.show_sticker_box
-                st.rerun()
-            st.caption("스티커")
-            st.markdown('</div>', unsafe_allow_html=True)
         with col_clr:
             st.markdown('<div class="circle-icon-btn">', unsafe_allow_html=True)
             if st.button("🎨", key="btn_circle_clr"):
@@ -1417,23 +1407,6 @@ else:
             if new_bg != st.session_state.page_custom_bg:
                 st.session_state.page_custom_bg = new_bg
                 st.rerun()
-
-        if st.session_state.get("show_sticker_box", False):
-            st.markdown("### ✨ 스티커 선택")
-            STICKER_CATEGORIES = {
-                "🎀 마스킹 테이프": ["🏷️ 핑크 체크 마테", "🏷️ 옐로우 도트 마테", "🏷️ 블루 스트라이프 마테", "🏷️ 보라하트 마테"],
-                "🖍️ 형광펜 밑줄 & 박스": ["🖍️ 핑크 형광펜 밑줄", "🖍️ 노랑 형광펜 밑줄", "🖍️ 연두 형광펜 밑줄", "🖍️ 하늘색 형광펜 밑줄"],
-                "⭕ 색연필 도형": ["⭕ 빨간 동그라미", "🟦 파란 네모", "⭐ 노란 별 도형", "📍 핑크 하트 도형"],
-                "💖 감성 모양 스티커": ["💖 반짝이 하트", "🌸 벚꽃잎", "🍀 네잎클로버", "🌙 초승달", "🧸 곰돌이 인형"]
-            }
-            selected_sticker_cat = st.selectbox("스티커 테마 범주 선택", list(STICKER_CATEGORIES.keys()))
-            sticker_cols = st.columns(4)
-            for idx, stk in enumerate(STICKER_CATEGORIES[selected_sticker_cat]):
-                col_idx = idx % 4
-                with sticker_cols[col_idx]:
-                    if st.button(stk, key=f"stk_{stk}", use_container_width=True):
-                        st.toast(f"'{stk}' 스티커가 추가되었습니다!", icon="✨")
-            st.markdown("---")
 
         col_date, col_emo = st.columns([1, 1])
         with col_date:
