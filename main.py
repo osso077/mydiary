@@ -727,151 +727,108 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#C2E0D2", "default_main": "#15803D", "default_sub": "#166534",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap",
         "font_family": "'Gowun Batang', serif",
-        "radius": "14px", "shadow": "0 4px 12px rgba(2
+        "radius": "14px", "shadow": "0 4px 12px rgba(21,128,61,0.08)",
+        "paper_bg": "#F6FBF8", "paper_text": "#1C352D", "paper_line": "#D4ECE1"
+    },
+    "🔮 몽환": {
+        "title": "🔮 달빛 아래 몽환 다이어리 🌙",
+        "bg": "#F5EFFF", "text": "#3C2A4D", "header": "#6B21A8", 
+        "card_bg": "#FFFFFF", "card_border": "#E9D5FF", "default_main": "#9333EA", "default_sub": "#C084FC",
+        "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
+        "font_family": "'Gamja Flower', cursive",
+        "radius": "22px", "shadow": "0 8px 24px rgba(147,51,234,0.15)",
+        "paper_bg": "#FAF5FF", "paper_text": "#3C2A4D", "paper_line": "#EAD6FC"
+    }
+}
 
-# 커스텀 에디터 전체 배경 설정용 세션 상태
+# 세션 테마 안전 검증
+current_theme_key = st.session_state.get("theme", "포근함")
+if current_theme_key not in THEME_STYLES:
+    current_theme_key = "포근함"
+
+theme_cfg = THEME_STYLES[current_theme_key]
+main_color = st.session_state.get("main_color") or theme_cfg["default_main"]
+sub_color = st.session_state.get("sub_color") or theme_cfg["default_sub"]
+app_title = theme_cfg["title"]
+
 if "page_custom_bg" not in st.session_state:
     st.session_state.page_custom_bg = theme_cfg["paper_bg"]
 
-is_editor_page = st.session_state.page in ["secret_editor", "public_editor"]
+is_editor_page = st.session_state.get("page", "") in ["secret_editor", "public_editor"]
 active_bg_color = st.session_state.page_custom_bg if is_editor_page else theme_cfg['bg']
 
 # ---------------------------------------------------------
-# 동적 CSS 주입
+# 💡 렌더링 시작 전 전역 CSS 강제 고정 (다크모드/깜빡임 차단)
 # ---------------------------------------------------------
-if st.session_state.user is not None:
-    st.markdown(f"""
-        <style>
-        @import url('{theme_cfg['font_import']}');
+st.markdown(f"""
+    <style>
+    @import url('{theme_cfg['font_import']}');
 
-        html, body, .stApp, .main, [data-testid="stVerticalBlock"] {{
-            background-color: {active_bg_color} !important;
-            color: {theme_cfg['text']} !important;
-            font-family: {theme_cfg['font_family']} !important;
-        }}
-        
-        h1, h2, h3, h4 {{
-            color: {theme_cfg['header']} !important;
-            font-family: {theme_cfg['font_family']} !important;
-            font-weight: bold;
-            letter-spacing: 1px;
-        }}
-        
-        .stTextInput input, div[data-testid="stForm"] {{
-            background-color: transparent !important;
-            border: none !important;
-            border-bottom: 2px dashed {theme_cfg['card_border']} !important;
-            border-radius: 0px !important;
-            color: {theme_cfg['text']} !important;
-            font-family: {theme_cfg['font_family']} !important;
-        }}
-        
-        div.stButton > button {{
-            background: linear-gradient(135deg, {main_color} 0%, {sub_color} 100%) !important;
-            color: white !important;
-            border-radius: {theme_cfg['radius']} !important;
-            border: none !important;
-            padding: 8px 18px !important;
-            font-weight: bold !important;
-            box-shadow: {theme_cfg['shadow']} !important;
-            font-family: {theme_cfg['font_family']} !important;
-            transition: all 0.25s ease-in-out;
-        }}
-        
-        div.stButton > button:hover {{
-            opacity: 0.9;
-            transform: translateY(-2px) scale(1.02);
-        }}
+    /* 스트림릿 전체 기본 배경 및 글자색 강제 고정 */
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .stApp, .main, [data-testid="stVerticalBlock"] {{
+        background-color: {active_bg_color} !important;
+        color: {theme_cfg['text']} !important;
+        font-family: {theme_cfg['font_family']} !important;
+    }}
+    
+    h1, h2, h3, h4 {{
+        color: {theme_cfg['header']} !important;
+        font-family: {theme_cfg['font_family']} !important;
+        font-weight: bold;
+        letter-spacing: 1px;
+    }}
+    
+    .stTextInput input, div[data-testid="stForm"] {{
+        background-color: transparent !important;
+        border: none !important;
+        border-bottom: 2px dashed {theme_cfg['card_border']} !important;
+        border-radius: 0px !important;
+        color: {theme_cfg['text']} !important;
+        font-family: {theme_cfg['font_family']} !important;
+    }}
+    
+    div.stButton > button {{
+        background: linear-gradient(135deg, {main_color} 0%, {sub_color} 100%) !important;
+        color: white !important;
+        border-radius: {theme_cfg['radius']} !important;
+        border: none !important;
+        padding: 8px 18px !important;
+        font-weight: bold !important;
+        box-shadow: {theme_cfg['shadow']} !important;
+        font-family: {theme_cfg['font_family']} !important;
+        transition: all 0.25s ease-in-out;
+    }}
+    
+    div.stButton > button:hover {{
+        opacity: 0.9;
+        transform: translateY(-2px) scale(1.02);
+    }}
 
-        .circle-icon-btn > button {{
-            border-radius: 50% !important;
-            width: 50px !important;
-            height: 50px !important;
-            padding: 0px !important;
-            font-size: 1.2rem !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            margin: 0 auto !important;
-        }}
-        
-        section[data-testid="stSidebar"] {{
-            background-color: {theme_cfg['card_bg']} !important;
-            border-right: 1px solid {theme_cfg['card_border']} !important;
-        }}
+    .circle-icon-btn > button {{
+        border-radius: 50% !important;
+        width: 50px !important;
+        height: 50px !important;
+        padding: 0px !important;
+        font-size: 1.2rem !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 0 auto !important;
+    }}
+    
+    section[data-testid="stSidebar"] {{
+        background-color: {theme_cfg['card_bg']} !important;
+        border-right: 1px solid {theme_cfg['card_border']} !important;
+    }}
 
-        iframe[title="streamlit_calendar.calendar"] {{
-            min-height: 580px !important;
-            border-radius: {theme_cfg['radius']} !important;
-            border: 1px solid {theme_cfg['card_border']} !important;
-            box-shadow: {theme_cfg['shadow']} !important;
-        }}
-        </style>
-    """, unsafe_allow_html=True)
-
-    components.html(f"""
-        <script>
-        function injectCalendarStyles() {{
-            const iframes = parent.document.querySelectorAll('iframe[title="streamlit_calendar.calendar"]');
-            iframes.forEach(iframe => {{
-                try {{
-                    const doc = iframe.contentDocument || iframe.contentWindow.document;
-                    if (doc) {{
-                        let styleTag = doc.getElementById("custom-cal-style");
-                        if (!styleTag) {{
-                            styleTag = doc.createElement("style");
-                            styleTag.id = "custom-cal-style";
-                            doc.head.appendChild(styleTag);
-                        }}
-                        styleTag.innerHTML = `
-                            body {{
-                                background-color: {theme_cfg['card_bg']} !important;
-                                font-family: {theme_cfg['font_family']} !important;
-                                color: {theme_cfg['text']} !important;
-                            }}
-                            .fc {{
-                                background-color: {theme_cfg['card_bg']} !important;
-                                border-radius: {theme_cfg['radius']} !important;
-                            }}
-                            .fc-theme-standard td, .fc-theme-standard th, .fc-theme-standard .fc-scrollgrid {{
-                                border-color: {theme_cfg['card_border']} !important;
-                            }}
-                            .fc-col-header-cell-cushion, .fc-daygrid-day-number {{
-                                color: {theme_cfg['text']} !important;
-                                text-decoration: none !important;
-                            }}
-                            button.fc-today-button {{
-                                background-color: {main_color} !important;
-                                border-color: {main_color} !important;
-                                color: #ffffff !important;
-                                border-radius: {theme_cfg['radius']} !important;
-                                font-weight: bold !important;
-                            }}
-                            button.fc-prev-button, button.fc-next-button {{
-                                background-color: {sub_color} !important;
-                                border-color: {sub_color} !important;
-                                color: #ffffff !important;
-                                border-radius: {theme_cfg['radius']} !important;
-                                font-weight: bold !important;
-                            }}
-                            .fc-button:hover {{
-                                opacity: 0.85 !important;
-                            }}
-                            .fc-day-today {{
-                                background-color: {main_color}25 !important;
-                            }}
-                            .fc-toolbar-title {{
-                                color: {theme_cfg['header']} !important;
-                                font-family: {theme_cfg['font_family']} !important;
-                            }}
-                        `;
-                    }}
-                }} catch(e) {{}}
-            }});
-        }}
-        setInterval(injectCalendarStyles, 300);
-        </script>
-    """, height=0)
+    iframe[title="streamlit_calendar.calendar"] {{
+        min-height: 580px !important;
+        border-radius: {theme_cfg['radius']} !important;
+        border: 1px solid {theme_cfg['card_border']} !important;
+        box-shadow: {theme_cfg['shadow']} !important;
+    }}
+    </style>
+""", unsafe_allow_html=True)
 
 today_dt = datetime.date.today()
 today_str = today_dt.strftime("%Y-%m-%d")
