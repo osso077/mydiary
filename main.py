@@ -946,8 +946,7 @@ else:
         for ud in ddays:
             try:
                 t_dt = datetime.datetime.strptime(ud['target_date'], "%Y-%m-%d").date()
-                # 14일 전부터 D-day 당일까지 각각의 날짜에 맞는 D-xx 표시 생성
-                for i in range(15): # 0일 전(당일)부터 14일 전까지
+                for i in range(15):
                     target_day = t_dt - datetime.timedelta(days=i)
                     diff = (t_dt - target_day).days
                     d_txt = "D-Day 🎉" if diff == 0 else f"D-{diff}"
