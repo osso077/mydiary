@@ -939,13 +939,35 @@ else:
         except Exception:
             pass
 
+    # 디데이 2주 전(14일 전)부터 달력에 표시할 이벤트 생성 함수
+    def get_dday_calendar_events():
+        events = []
+        ddays = get_user_ddays(current_user)
+        for ud in ddays:
+            try:
+                t_dt = datetime.datetime.strptime(ud['target_date'], "%Y-%m-%d").date()
+                diff = (t_dt - today_dt).days
+                # D-14일부터 D-Day 당일까지만 달력에 노출
+                if 0 <= diff <= 14:
+                    d_txt = "D-Day 🎉" if diff == 0 else f"D-{diff}"
+                    events.append({
+                        "title": f"⏳ [{d_txt}] {ud['title']}",
+                        "start": ud['target_date'],
+                        "end": ud['target_date'],
+                        "allDay": True,
+                        "color": "#F97316"
+                    })
+            except Exception:
+                pass
+        return events
+
     # PAGE 1: 🔒 비밀일기 달력
     if st.session_state.page == "secret_calendar":
         st.title(app_title)
         st.header("🔒 나만의 비밀일기")
         secret_diaries = get_user_diaries(current_user, is_public_flag=False)
 
-        calendar_events = list(birthday_events)
+        calendar_events = list(birthday_events) + get_dday_calendar_events()
         for date_str, diary_data in secret_diaries.items():
             if diary_data.get("content") or diary_data.get("drawing"):
                 calendar_events.append({
@@ -978,7 +1000,7 @@ else:
             with legend_cols[idx]:
                 st.markdown(f"<span style='color:{cat_color}; font-weight:bold;'>■</span> <small>{cat_name.split()[1]}</small>", unsafe_allow_html=True)
 
-        calendar_events = list(birthday_events)
+        calendar_events = list(birthday_events) + get_dday_calendar_events()
         for s in schedules:
             calendar_events.append({
                 "title": f"📌 [{s['category'].split()[1]}] {s['title']}",
@@ -1048,7 +1070,7 @@ else:
 
         with tab1:
             my_public_diaries = get_user_diaries(current_user, is_public_flag=True)
-            calendar_events = list(birthday_events)
+            calendar_events = list(birthday_events) + get_dday_calendar_events()
             for d, data in my_public_diaries.items():
                 if data.get("content") or data.get("drawing"):
                     calendar_events.append({
