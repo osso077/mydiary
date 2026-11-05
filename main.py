@@ -939,21 +939,23 @@ else:
         except Exception:
             pass
 
-    # 디데이 2주 전(14일 전)부터 달력에 표시할 이벤트 생성 함수
+    # 디데이 2주 전(14일 전)부터 날짜별로 D-14, D-13... 형태로 달력에 표시하는 함수
     def get_dday_calendar_events():
         events = []
         ddays = get_user_ddays(current_user)
         for ud in ddays:
             try:
                 t_dt = datetime.datetime.strptime(ud['target_date'], "%Y-%m-%d").date()
-                diff = (t_dt - today_dt).days
-                # D-14일부터 D-Day 당일까지만 달력에 노출
-                if 0 <= diff <= 14:
+                # 14일 전부터 D-day 당일까지 각각의 날짜에 맞는 D-xx 표시 생성
+                for i in range(15): # 0일 전(당일)부터 14일 전까지
+                    target_day = t_dt - datetime.timedelta(days=i)
+                    diff = (t_dt - target_day).days
                     d_txt = "D-Day 🎉" if diff == 0 else f"D-{diff}"
+                    
                     events.append({
                         "title": f"⏳ [{d_txt}] {ud['title']}",
-                        "start": ud['target_date'],
-                        "end": ud['target_date'],
+                        "start": target_day.strftime("%Y-%m-%d"),
+                        "end": target_day.strftime("%Y-%m-%d"),
                         "allDay": True,
                         "color": "#F97316"
                     })
