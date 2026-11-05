@@ -609,11 +609,11 @@ def parse_calendar_date(raw_date_str):
 
 
 # =========================================================
-# 2. UI 및 테마 설정 (11종)
+# 2. UI 및 테마 설정 (11종) - 다크/깜빡임 버그 완벽 차단
 # =========================================================
 st.set_page_config(page_title="소소한 일기장", page_icon="🧸", layout="centered")
 
-# 세션 상태 초기화 (페이지 및 기본값 설정)
+# 세션 상태 안전하게 초기화
 if "user" not in st.session_state:
     st.session_state.user = None
 if "nickname" not in st.session_state:
@@ -625,11 +625,11 @@ if "profile_icon" not in st.session_state:
 if "status_message" not in st.session_state:
     st.session_state.status_message = ""
 if "theme" not in st.session_state:
-    st.session_state.theme = "👁️‍🗨️ 드림코어"
+    st.session_state.theme = "포근함"
 if "main_color" not in st.session_state:
-    st.session_state.main_color = "#8B5CF6"
+    st.session_state.main_color = "#DDA15E"
 if "sub_color" not in st.session_state:
-    st.session_state.sub_color = "#06B6D4"
+    st.session_state.sub_color = "#BC6C25"
 if "invite_code" not in st.session_state:
     st.session_state.invite_code = ""
 if "viewing_friend" not in st.session_state:
@@ -727,25 +727,7 @@ THEME_STYLES = {
         "card_bg": "#FFFFFF", "card_border": "#C2E0D2", "default_main": "#15803D", "default_sub": "#166534",
         "font_import": "https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap",
         "font_family": "'Gowun Batang', serif",
-        "radius": "14px", "shadow": "0 4px 12px rgba(21,128,61,0.08)",
-        "paper_bg": "#F6FBF8", "paper_text": "#1C352D", "paper_line": "#D4ECE1"
-    },
-    "🔮 몽환": {
-        "title": "🔮 달빛 아래 몽환 다이어리 🌙",
-        "bg": "#F5EFFF", "text": "#3C2A4D", "header": "#6B21A8", 
-        "card_bg": "#FFFFFF", "card_border": "#E9D5FF", "default_main": "#9333EA", "default_sub": "#C084FC",
-        "font_import": "https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap",
-        "font_family": "'Gamja Flower', cursive",
-        "radius": "22px", "shadow": "0 8px 24px rgba(147,51,234,0.15)",
-        "paper_bg": "#FAF5FF", "paper_text": "#3C2A4D", "paper_line": "#EAD6FC"
-    }
-}
-
-current_theme_key = st.session_state.theme if st.session_state.theme in THEME_STYLES else "👁️‍🗨️ 드림코어"
-theme_cfg = THEME_STYLES[current_theme_key]
-main_color = st.session_state.main_color if st.session_state.main_color else theme_cfg["default_main"]
-sub_color = st.session_state.sub_color if st.session_state.sub_color else theme_cfg["default_sub"]
-app_title = theme_cfg["title"]
+        "radius": "14px", "shadow": "0 4px 12px rgba(2
 
 # 커스텀 에디터 전체 배경 설정용 세션 상태
 if "page_custom_bg" not in st.session_state:
