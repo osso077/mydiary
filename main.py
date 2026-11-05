@@ -1378,7 +1378,7 @@ else:
             st.rerun()
 
     # =========================================================
-    # PAGE 4: 일기 작성 에디터 (스티커 기능 완전 삭제됨)
+    # PAGE 4: 일기 작성 에디터
     # =========================================================
     elif st.session_state.page in ["secret_editor", "public_editor"]:
         s_date = st.session_state.selected_date
@@ -1501,13 +1501,13 @@ else:
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
             if st.button("💾 일기 저장", use_container_width=True):
-                if txt.strip():
+                if txt is not None:
                     final_is_pub = 1 if pub_mode == "🌐 전체 공개" else 0
                     final_allow_str = ",".join(selected_allow_friends) if pub_mode == "👥 선택한 친구에게만 공개" else ""
                     
-                    save_diary(current_user, s_date, sel_emoji, txt.strip(), "", final_is_pub, final_allow_str)
+                    save_diary(current_user, s_date, sel_emoji, txt, "", final_is_pub, final_allow_str)
                     
-                    if daily_ans_input.strip():
+                    if daily_ans_input and daily_ans_input.strip():
                         save_daily_answer(current_user, s_date, daily_q, daily_ans_input.strip())
                     
                     st.success("일기가 성공적으로 저장되었습니다!")
